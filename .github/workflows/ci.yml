@@ -58,7 +58,7 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/rustom_development
         run: |
           sqlx database create
-          sqlx migrate run
+          sqlx migrate run --source db/migrations
 
       - name: Run tests
         env:

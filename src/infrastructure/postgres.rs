@@ -15,7 +15,7 @@ pub async fn init_db(config: &AppConfig) -> Result<PgPool, AppError> {
         .map_err(AppError::Database)?;
 
     tracing::info!("Applying pending migrations...");
-    let mut migrator = sqlx::migrate!("./migrations");
+    let mut migrator = sqlx::migrate!("./db/migrations");
     migrator.set_ignore_missing(true);
     let _: () = migrator.run(&pool)
         .await

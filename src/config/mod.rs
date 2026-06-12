@@ -1,3 +1,5 @@
+pub mod routes;
+
 use serde::Deserialize;
 
 /// Global application configuration loaded from environment variables.

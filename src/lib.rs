@@ -10,5 +10,5 @@ pub mod infrastructure;
 pub mod middleware;
 pub mod models;
 pub mod policies;
-pub mod router;
+
 pub mod services;

@@ -7,7 +7,7 @@ use rustom::config::AppConfig;
 use rustom::errors::AppError;
 use rustom::models::job::JobPayload;
 use rustom::services::{DynCacheService, DynQueueService, QueueService, UserService};
-use rustom::router::create_router;
+use rustom::config::routes::create_router;
 
 pub struct MockCache;
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use rustom::app_state;
 use rustom::config;
 use rustom::infrastructure;
-use rustom::router;
+use rustom::config::routes;
 use rustom::services;
 
 #[tokio::main]
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
     };
 
-    let app = router::create_router(state);
+    let app = routes::create_router(state);
 
     // 9. Start Axum server listening on specified port
     let addr = format!("{}:{}", config.host, config.port);
