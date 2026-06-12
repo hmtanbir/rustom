@@ -4,7 +4,7 @@ use lapin::{
     Channel, Connection, ConnectionProperties,
 };
 use crate::config::AppConfig;
-use crate::domain::AppError;
+use crate::errors::AppError;
 
 /// Name of the message queue for processing background tasks.
 pub const JOBS_QUEUE: &str = "rustom_jobs_queue";
@@ -20,10 +20,10 @@ pub async fn init_rabbitmq(config: &AppConfig) -> Result<(Connection, Channel), 
     .await
     .map_err(AppError::Queue)?;
 
-    let channel = conn.create_channel().await.map_err(AppError::Queue)?;
+    let channel: Channel = conn.create_channel().await.map_err(AppError::Queue)?;
 
     tracing::info!("Declaring queue: {}", JOBS_QUEUE);
-    channel
+    let _: lapin::Queue = channel
         .queue_declare(
             JOBS_QUEUE,
             QueueDeclareOptions {

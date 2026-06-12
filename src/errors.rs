@@ -5,43 +5,35 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use crate::services::slack_notification::SlackNotification;
 
 /// Centralized application error enum mapping domain errors to HTTP status codes.
 #[derive(Error, Debug)]
 pub enum AppError {
-    /// Database access errors via SQLx.
     #[error("Internal database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    /// Caching system errors.
     #[error("Cache error: {0}")]
     Cache(String),
 
-    /// Message broker errors via lapin.
     #[error("Message queue error: {0}")]
     Queue(#[from] lapin::Error),
 
-    /// Authentication failure errors.
     #[error("Authentication failed: {0}")]
     Authentication(String),
 
-    /// Authorization policy failures.
     #[error("Authorization failed: {0}")]
     Authorization(String),
 
-    /// Bad request input validation failures.
     #[error("Invalid request input: {0}")]
     InvalidInput(String),
 
-    /// Resource not found errors.
     #[error("Resource not found: {0}")]
     NotFound(String),
 
-    /// Conflicts, e.g. record with duplicate unique key already exists.
     #[error("Conflict: {0}")]
     Conflict(String),
 
-    /// Catch-all handler for unexpected, runtime errors.
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
 }
@@ -51,7 +43,6 @@ impl IntoResponse for AppError {
         let (status, error_message) = match &self {
             AppError::Database(err) => {
                 tracing::error!("Database error occurred: {:?}", err);
-                // Return generic message for internal errors to hide DB details from client
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".to_string())
             }
             AppError::Cache(err) => {
@@ -64,18 +55,27 @@ impl IntoResponse for AppError {
             }
             AppError::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
             AppError::Authorization(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::InvalidInput(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()), // Matching Rails unprocessable_content
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::Unexpected(err) => {
                 tracing::error!("Unexpected application error: {:?}", err);
+                let msg = err.to_string();
+                
+                // Spawn a background task to send Slack notification
+                let slack_msg = format!("[Error] Exception occurred\nMessage: {}\n", msg);
+                tokio::spawn(async move {
+                    let _ = SlackNotification::notify_error(&slack_msg).await;
+                });
+                
                 (StatusCode::INTERNAL_SERVER_ERROR, "An unexpected error occurred".to_string())
             }
         };
 
         let body = Json(json!({
-            "success": false,
-            "error": error_message,
+            "status": status.as_u16(),
+            "message": error_message,
+            "data": null
         }));
 
         (status, body).into_response()

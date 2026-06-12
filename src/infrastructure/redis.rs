@@ -1,6 +1,6 @@
 use deadpool_redis::{Config, Pool, Runtime};
 use crate::config::AppConfig;
-use crate::domain::AppError;
+use crate::errors::AppError;
 
 /// Redis Connection Pool alias.
 pub type RedisPool = Pool;

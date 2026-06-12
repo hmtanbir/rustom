@@ -1,0 +1,28 @@
+    Checking rustom v0.1.0 (/Users/hmtanbir/www/projects/open-source/rustom)
+error[E0432]: unresolved import `http_body_util`
+ --> src/middleware/payload_encryption.rs:8:5
+  |
+8 | use http_body_util::BodyExt;
+  |     ^^^^^^^^^^^^^^ use of unresolved module or unlinked crate `http_body_util`
+  |
+  = help: if you wanted to use a crate named `http_body_util`, use `cargo add http_body_util` to add it to your `Cargo.toml`
+
+warning: unused imports: `delete` and `patch`
+ --> src/controllers/api/v1/mod.rs:6:26
+  |
+6 |     routing::{get, post, patch, delete},
+  |                          ^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `existing`
+   --> src/services/user.rs:233:13
+    |
+233 |         let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_existing`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+For more information about this error, try `rustc --explain E0432`.
+warning: `rustom` (lib) generated 2 warnings
+error: could not compile `rustom` (lib) due to 1 previous error; 2 warnings emitted

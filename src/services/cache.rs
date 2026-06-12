@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use redis::AsyncCommands;
 
 use std::sync::Arc;
-use crate::domain::AppError;
+use crate::errors::AppError;
 use crate::infrastructure::RedisPool;
 
 /// Generic caching service trait for storage operations.
@@ -38,7 +38,7 @@ impl CacheService for RedisCacheService {
             AppError::Cache(format!("Failed to acquire connection from Redis pool: {}", e))
         })?;
 
-        let value_str: Option<String> = conn.get(key).await.map_err(|e| {
+        let value_str: Option<String> = conn.get::<&str, Option<String>>(key).await.map_err(|e| {
             AppError::Cache(format!("Redis GET command failed: {}", e))
         })?;
 
@@ -51,7 +51,7 @@ impl CacheService for RedisCacheService {
         })?;
 
         let _: () = conn
-            .set_ex(key, value, ttl_seconds)
+            .set_ex::<&str, &str, ()>(key, value, ttl_seconds)
             .await
             .map_err(|e| AppError::Cache(format!("Redis SETEX command failed: {}", e)))?;
 
@@ -64,7 +64,7 @@ impl CacheService for RedisCacheService {
         })?;
 
         let _: () = conn
-            .del(key)
+            .del::<&str, ()>(key)
             .await
             .map_err(|e| AppError::Cache(format!("Redis DEL command failed: {}", e)))?;
 

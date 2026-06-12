@@ -29,6 +29,10 @@ chrono = { version = "0.4", features = ["serde"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 rand = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+aes-gcm = "0.10"
+base64 = "0.22"
+hex = "0.4"
 
 
 [dev-dependencies]

@@ -1,11 +1,13 @@
+#![warn(clippy::all)]
+
 use anyhow::Context;
 use std::sync::Arc;
 
-use rustom::api;
+use rustom::app_state;
 use rustom::config;
 use rustom::infrastructure;
+use rustom::router;
 use rustom::services;
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,8 +18,9 @@ async fn main() -> anyhow::Result<()> {
     // 2. Initialize logging & tracing subscriber
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,rustom=debug,tower_http=debug")),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("info,rustom=debug,tower_http=debug")
+            }),
         )
         .init();
 
@@ -41,18 +44,20 @@ async fn main() -> anyhow::Result<()> {
     services::start_queue_consumer(rabbitmq_channel.clone());
 
     // 7. Instantiate services
-    let cache_service = Arc::new(services::RedisCacheService::new(redis)) as services::DynCacheService;
+    let cache_service =
+        Arc::new(services::RedisCacheService::new(redis)) as services::DynCacheService;
     let user_service = services::UserService::new(db, cache_service, config.clone());
-    let queue_publisher = Arc::new(services::RabbitMQQueueService::new(rabbitmq_channel)) as services::DynQueueService;
+    let queue_publisher = Arc::new(services::RabbitMQQueueService::new(rabbitmq_channel))
+        as services::DynQueueService;
 
     // 8. Bootstrap state and routes
-    let state = api::AppState {
+    let state = app_state::AppState {
         user_service,
         queue_publisher,
         config: config.clone(),
     };
 
-    let app = api::create_router(state);
+    let app = router::create_router(state);
 
     // 9. Start Axum server listening on specified port
     let addr = format!("{}:{}", config.host, config.port);
@@ -61,7 +66,10 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("Failed to bind to server address: {}", addr))?;
 
     tracing::info!("Rustom API server running on http://{}", addr);
-    tracing::info!("Swagger documentation available at http://{}/api/docs", addr);
+    tracing::info!(
+        "Swagger documentation available at http://{}/api/docs",
+        addr
+    );
 
     axum::serve(listener, app)
         .await

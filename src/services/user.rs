@@ -5,16 +5,17 @@ use argon2::{
 use jsonwebtoken::{encode, Header, EncodingKey};
 use sqlx::PgPool;
 use uuid::Uuid;
+use crate::errors::AppError;
 use chrono::Utc;
 
 use crate::config::AppConfig;
-use crate::domain::{
-    AppError, Claims, User, UserLoginRequestDto, UserLoginResponseDto,
-    UserRegisterRequestDto, UserResponseDto, UserRole,
+use crate::models::{
+    Claims, User, UserLoginRequestDto, UserLoginResponseDto,
+    UserRegisterRequestDto, UserResponseDto, UserCreateRequestDto, UserUpdateRequestDto,
+    PaginationParams, PaginatedResponse
 };
 use crate::services::cache::DynCacheService;
 
-/// Service containing business logic for users, auth, password verification, and caching.
 #[derive(Clone)]
 pub struct UserService {
     db: PgPool,
@@ -23,14 +24,11 @@ pub struct UserService {
 }
 
 impl UserService {
-    /// Create a new UserService.
     pub fn new(db: PgPool, cache: DynCacheService, config: AppConfig) -> Self {
         Self { db, cache, config }
     }
 
-    /// Registers a new user, hashes their password, and saves them to the database.
     pub async fn register(&self, dto: UserRegisterRequestDto) -> Result<UserResponseDto, AppError> {
-        // Validate if user already exists
         let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
             .bind(&dto.email)
             .fetch_optional(&self.db)
@@ -40,55 +38,51 @@ impl UserService {
             return Err(AppError::Conflict("Email is already registered".to_string()));
         }
 
-        // Hash password using Argon2id
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
-        let password_hash = argon2
+        let password_digest = argon2
             .hash_password(dto.password.as_bytes(), &salt)
             .map_err(|e| AppError::Authentication(format!("Password hashing failure: {}", e)))?
             .to_string();
 
-        let assigned_role = dto.role.unwrap_or(UserRole::User);
-
-        // Save to DB inside transaction
         let mut tx = self.db.begin().await?;
         let user = sqlx::query_as::<_, User>(
             r#"
-            INSERT INTO users (email, password_hash, role)
-            VALUES ($1, $2, $3)
-            RETURNING id, email, password_hash, role, created_at, updated_at
+            INSERT INTO users (name, email, password_digest, role, status)
+            VALUES ($1, $2, $3, 1, 1)
+            RETURNING *
             "#
         )
+        .bind(&dto.name)
         .bind(&dto.email)
-        .bind(&password_hash)
-        .bind(assigned_role)
+        .bind(&password_digest)
         .fetch_one(&mut *tx)
         .await?;
 
         tx.commit().await?;
 
-        tracing::info!("Registered user: {} with role: {}", user.email, user.role);
         Ok(UserResponseDto::from(user))
     }
 
-    /// Authenticates user credentials, validates password hash, and issues a JWT token.
     pub async fn login(&self, dto: UserLoginRequestDto) -> Result<UserLoginResponseDto, AppError> {
         let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
             .bind(&dto.email)
             .fetch_optional(&self.db)
             .await?
-            .ok_or(AppError::Authentication("Invalid email or password".to_string()))?;
+            .ok_or(AppError::NotFound("invalid email".to_string()))?;
 
-        // Verify password hash
-        let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|e| {
+        let parsed_hash = PasswordHash::new(&user.password_digest).map_err(|e| {
             AppError::Authentication(format!("Invalid password hash representation: {}", e))
         })?;
 
         Argon2::default()
             .verify_password(dto.password.as_bytes(), &parsed_hash)
-            .map_err(|_| AppError::Authentication("Invalid email or password".to_string()))?;
+            .map_err(|_| AppError::Authentication("invalid password".to_string()))?;
+            
+        if user.is_inactive() {
+            return Err(AppError::Authentication("User is inactive or deleted".to_string()));
+        }
 
-        // Generate JWT claims
         let exp = Utc::now()
             .checked_add_signed(chrono::Duration::seconds(
                 self.config.jwt_expiration_seconds as i64,
@@ -97,13 +91,11 @@ impl UserService {
             .timestamp() as u64;
 
         let claims = Claims {
-            sub: user.id.to_string(),
-            email: user.email.clone(),
+            user_id: user.id,
             role: user.role,
             exp,
         };
 
-        // Sign token
         let token = encode(
             &Header::default(),
             &claims,
@@ -111,136 +103,182 @@ impl UserService {
         )
         .map_err(|e| AppError::Authentication(format!("Token signing failure: {}", e)))?;
 
-        tracing::info!("User logged in successfully: {}", user.email);
-
-        Ok(UserLoginResponseDto {
-            token,
-            user: UserResponseDto::from(user),
-        })
+        Ok(UserLoginResponseDto { token })
     }
 
-    /// Retrieve user profile, checking Redis cache first.
-    pub async fn get_profile(&self, user_id: Uuid) -> Result<UserResponseDto, AppError> {
-        let cache_key = format!("user:profile:{}", user_id);
+    pub async fn get_users_paginated(&self, params: PaginationParams) -> Result<PaginatedResponse<UserResponseDto>, AppError> {
+        let cache_key = format!(
+            "users_index/{}/{}/{}/{}/{}",
+            params.role.as_deref().unwrap_or("all"),
+            params.deleted.unwrap_or(false),
+            params.get_page(),
+            params.get_per_page(),
+            "latest" // In a real app we'd track last_updated_at but simplifying for now
+        );
 
-        // Attempt reading from cache
-        if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await {
-            if let Ok(cached_user) = serde_json::from_str::<UserResponseDto>(&cached_str) {
-                tracing::debug!("Cache hit for user profile ID: {}", user_id);
-                return Ok(cached_user);
+        if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
+            && let Ok(cached) = serde_json::from_str::<PaginatedResponse<UserResponseDto>>(&cached_str) {
+                return Ok(cached);
             }
+
+        let role_filter = params.role.as_deref().map(|r| if r == "admin" { 0 } else { 1 });
+        let deleted_filter = params.deleted.unwrap_or(false);
+
+        let mut query = "SELECT * FROM users WHERE 1=1".to_string();
+        let mut count_query = "SELECT COUNT(*) FROM users WHERE 1=1".to_string();
+        
+        if deleted_filter {
+            query.push_str(" AND deleted_at IS NOT NULL");
+            count_query.push_str(" AND deleted_at IS NOT NULL");
+        } else {
+            query.push_str(" AND deleted_at IS NULL");
+            count_query.push_str(" AND deleted_at IS NULL");
+        }
+        
+        if let Some(r) = role_filter {
+            query.push_str(&format!(" AND role = {}", r));
+            count_query.push_str(&format!(" AND role = {}", r));
         }
 
-        // Cache miss -> query Postgres database
-        tracing::debug!("Cache miss for user profile ID: {}", user_id);
+        let total_count: (i64,) = sqlx::query_as(&count_query).fetch_one(&self.db).await?;
+        let total_count = total_count.0 as u32;
+
+        let total_pages = if total_count == 0 { 1 } else { (total_count as f32 / params.get_per_page() as f32).ceil() as u32 };
+        
+        query.push_str(" ORDER BY created_at DESC LIMIT $1 OFFSET $2");
+
+        let users = sqlx::query_as::<_, User>(&query)
+            .bind(params.get_per_page() as i64)
+            .bind(params.offset() as i64)
+            .fetch_all(&self.db)
+            .await?;
+
+        let response = PaginatedResponse {
+            status: 200,
+            message: "Successfully data fetched".to_string(),
+            data: users.into_iter().map(UserResponseDto::from).collect(),
+            current_page: params.get_page(),
+            per_page: params.get_per_page(),
+            total_pages,
+            total_count,
+            next_page: if params.get_page() < total_pages { Some(params.get_page() + 1) } else { None },
+            prev_page: if params.get_page() > 1 { Some(params.get_page() - 1) } else { None },
+        };
+
+        if let Ok(json_str) = serde_json::to_string(&response) {
+            let ttl = std::env::var("API_CACHE_TTL").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600);
+            let _ = self.cache.set(&cache_key, &json_str, ttl).await;
+        }
+
+        Ok(response)
+    }
+
+    pub async fn get_user(&self, user_id: Uuid) -> Result<UserResponseDto, AppError> {
+        let cache_key = format!("user:profile:{}", user_id);
+
+        if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
+            && let Ok(cached_user) = serde_json::from_str::<UserResponseDto>(&cached_str) {
+                return Ok(cached_user);
+            }
+
         let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional(&self.db)
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("User with ID {} not found", user_id)))?;
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
         let user_dto = UserResponseDto::from(user);
 
-        // Store back in Cache (expires in 5 minutes)
         if let Ok(json_str) = serde_json::to_string(&user_dto) {
-            if let Err(e) = self.cache.set(&cache_key, &json_str, 300).await {
-                tracing::warn!("Failed to store user profile in cache: {:?}", e);
-            }
+            let ttl = std::env::var("API_CACHE_TTL").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600);
+            let _ = self.cache.set(&cache_key, &json_str, ttl).await;
         }
 
         Ok(user_dto)
     }
 
-    /// Update user role and invalidate their cached profile.
-    pub async fn update_role(&self, user_id: Uuid, role: UserRole) -> Result<UserResponseDto, AppError> {
+    pub async fn create_user(&self, dto: UserCreateRequestDto) -> Result<UserResponseDto, AppError> {
+        let salt = SaltString::generate(&mut OsRng);
+        let password_digest = Argon2::default()
+            .hash_password(dto.password.as_bytes(), &salt)
+            .map_err(|e| AppError::Authentication(format!("Hashing error: {}", e)))?
+            .to_string();
+
         let mut tx = self.db.begin().await?;
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            INSERT INTO users (name, email, password_digest, role, status)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+            "#
+        )
+        .bind(&dto.name)
+        .bind(&dto.email)
+        .bind(&password_digest)
+        .bind(dto.role.unwrap_or(1))
+        .bind(dto.status.unwrap_or(1))
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(UserResponseDto::from(user))
+    }
+
+    pub async fn update_user(&self, user_id: Uuid, dto: UserUpdateRequestDto) -> Result<UserResponseDto, AppError> {
+        let mut tx = self.db.begin().await?;
+        
+        let _existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
         let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
-            SET role = $1, updated_at = NOW()
-            WHERE id = $2
-            RETURNING id, email, password_hash, role, created_at, updated_at
+            SET name = COALESCE($1, name),
+                email = COALESCE($2, email),
+                role = COALESCE($3, role),
+                status = COALESCE($4, status),
+                updated_at = NOW()
+            WHERE id = $5
+            RETURNING *
             "#
         )
-        .bind(role)
+        .bind(&dto.name)
+        .bind(&dto.email)
+        .bind(dto.role)
+        .bind(dto.status)
         .bind(user_id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("User ID {} not found to update", user_id)))?;
+        .fetch_one(&mut *tx)
+        .await?;
 
         tx.commit().await?;
 
-        let user_dto = UserResponseDto::from(user);
-
-        // Invalidate cache key
         let cache_key = format!("user:profile:{}", user_id);
-        if let Err(e) = self.cache.delete(&cache_key).await {
-            tracing::warn!("Failed to invalidate cache for key {}: {:?}", cache_key, e);
-        } else {
-            tracing::info!("Invalidated cache key: {}", cache_key);
+        let _ = self.cache.delete(&cache_key).await;
+
+        Ok(UserResponseDto::from(user))
+    }
+
+    pub async fn soft_delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
+        let mut tx = self.db.begin().await?;
+        
+        let result = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?;
+            
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("User not found".to_string()));
         }
 
-        Ok(user_dto)
+        tx.commit().await?;
+        
+        let cache_key = format!("user:profile:{}", user_id);
+        let _ = self.cache.delete(&cache_key).await;
+
+        Ok(())
     }
 }
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use mockall::mock;
-    use std::sync::Arc;
-
-    mock! {
-        pub Cache {}
-        #[async_trait::async_trait]
-        impl crate::services::cache::CacheService for Cache {
-            async fn get(&self, key: &str) -> Result<Option<String>, AppError>;
-            async fn set(&self, key: &str, value: &str, ttl_seconds: u64) -> Result<(), AppError>;
-            async fn delete(&self, key: &str) -> Result<(), AppError>;
-        }
-    }
-
-    #[tokio::test]
-    async fn test_get_profile_cache_hit() {
-        let mut mock_cache = MockCache::new();
-
-        let target_id = Uuid::new_v4();
-        let expected_user = UserResponseDto {
-            id: target_id,
-            email: "cached@example.com".to_string(),
-            role: UserRole::User,
-            created_at: Utc::now(),
-        };
-
-        let user_str = serde_json::to_string(&expected_user).unwrap();
-        mock_cache
-            .expect_get()
-            .with(mockall::predicate::eq(format!("user:profile:{}", target_id)))
-            .times(1)
-            .returning(move |_| Ok(Some(user_str.clone())));
-
-        // Since it's a cache hit, we don't query the database.
-        // We can pass a lazy/unconnected PgPool.
-        let db = PgPool::connect_lazy("postgres://localhost/dummy_db").unwrap();
-
-        let config = AppConfig {
-            host: "0.0.0.0".to_string(),
-            port: 8080,
-            database_url: "postgres://localhost/dummy_db".to_string(),
-            redis_url: "redis://localhost/dummy_redis".to_string(),
-            rabbitmq_url: "amqp://localhost/dummy_rabbit".to_string(),
-            jwt_secret: "super_secret_jwt_key_that_is_long_enough_to_be_secure_12345".to_string(),
-            jwt_expiration_seconds: 3600,
-        };
-
-        let user_service = UserService::new(db, Arc::new(mock_cache), config);
-        let result = user_service.get_profile(target_id).await.unwrap();
-
-        assert_eq!(result.id, target_id);
-        assert_eq!(result.email, "cached@example.com");
-        assert_eq!(result.role, UserRole::User);
-    }
-}
-

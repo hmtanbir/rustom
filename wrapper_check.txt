@@ -1,0 +1,48 @@
+    Checking rustom v0.1.0 (/Users/hmtanbir/www/projects/open-source/rustom)
+error[E0609]: no field `role` on type `AuthenticatedUser`
+  --> src/controllers/api/v1/users_controller.rs:68:13
+   |
+68 |     if auth.role != 0 {
+   |             ^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+68 |     if auth.0.role != 0 {
+   |             ++
+
+error[E0609]: no field `user_id` on type `AuthenticatedUser`
+  --> src/controllers/api/v1/users_controller.rs:72:56
+   |
+72 |     let user_dto = state.user_service.update_user(auth.user_id, payload).await?;
+   |                                                        ^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+72 |     let user_dto = state.user_service.update_user(auth.0.user_id, payload).await?;
+   |                                                        ++
+
+error[E0609]: no field `role` on type `AuthenticatedUser`
+  --> src/controllers/api/v1/users_controller.rs:86:13
+   |
+86 |     if auth.role != 0 {
+   |             ^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+86 |     if auth.0.role != 0 {
+   |             ++
+
+error[E0599]: no variant or associated item named `Forbidden` found for enum `AppError` in the current scope
+  --> src/controllers/api/v1/users_controller.rs:87:30
+   |
+87 |         return Err(AppError::Forbidden("Only admins can create users directly".to_string()));
+   |                              ^^^^^^^^^ variant or associated item not found in `AppError`
+   |
+  ::: src/errors.rs:12:1
+   |
+12 | pub enum AppError {
+   | ----------------- variant or associated item `Forbidden` not found for this enum
+
+Some errors have detailed explanations: E0599, E0609.
+For more information about an error, try `rustc --explain E0599`.
+error: could not compile `rustom` (lib) due to 4 previous errors

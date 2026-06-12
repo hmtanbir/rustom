@@ -2,37 +2,29 @@ use utoipa::{
     openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
 };
-use crate::api::handlers;
-use crate::domain;
+// use crate::controllers::api::v1::{registration_controller, sessions_controller, users_controller};
+use crate::models;
 
 /// Master OpenAPI structure aggregating all handlers, schemas, and security rules.
 #[derive(OpenApi)]
 #[openapi(
-    paths(
-        handlers::auth::register_handler,
-        handlers::auth::login_handler,
-        handlers::user::get_profile_handler,
-        handlers::user::update_role_handler,
-        handlers::job::create_job_handler,
-    ),
+    paths(),
     components(
         schemas(
-            domain::UserResponseDto,
-            domain::UserRegisterRequestDto,
-            domain::UserLoginRequestDto,
-            domain::UserLoginResponseDto,
-            domain::UserRole,
-            domain::JobPayload,
-            domain::CreateJobRequestDto,
-            domain::CreateJobResponseDto,
-            handlers::user::UpdateRoleRequestDto,
+            models::UserResponseDto,
+            models::UserRegisterRequestDto,
+            models::UserLoginRequestDto,
+            models::UserLoginResponseDto,
+            models::UserCreateRequestDto,
+            models::UserUpdateRequestDto,
+            models::PaginationParams,
+            models::PaginatedResponse<models::UserResponseDto>,
         )
     ),
     modifiers(&SecurityAddon),
     tags(
-        (name = "Auth", description = "Authentication and Authorization Endpoints"),
-        (name = "Users", description = "User management and profile actions"),
-        (name = "Jobs", description = "Asynchronous queue triggers")
+        (name = "Auth", description = "Authentication and Registration"),
+        (name = "Users", description = "User Management")
     )
 )]
 pub struct ApiDoc;

@@ -6,7 +6,9 @@ use axum::{
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use crate::config::AppConfig;
-use crate::domain::{AppError, Claims};
+use crate::errors::AppError;
+use crate::models::Claims;
+use crate::services::EncryptionService;
 
 /// Extractor type to enforce and inspect JWT authenticated users.
 pub struct AuthenticatedUser(pub Claims);
@@ -19,19 +21,17 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // Retrieve AppConfig from router Extension layer
         let Extension(config) = Extension::<AppConfig>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
                 AppError::Unexpected(anyhow::anyhow!("AppConfig was not injected via Router extensions"))
             })?;
 
-        // Inspect header authorization presence
         let auth_header = parts
             .headers
             .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| AppError::Authentication("Missing Authorization header".to_string()))?;
+            .ok_or_else(|| AppError::Authentication("Missing Authorization token".to_string()))?;
 
         if !auth_header.starts_with("Bearer ") {
             return Err(AppError::Authentication(
@@ -39,15 +39,26 @@ where
             ));
         }
 
-        let token = &auth_header[7..];
+        let mut token = auth_header[7..].to_string();
 
-        // Decode claims validating expiration and signature
+        // If encryption is enabled, try to decrypt the token.
+        // The user might be sending the entire encrypted response.
+        if EncryptionService::encryption_enabled() {
+            if let Ok(decrypted_string) = EncryptionService::decrypt(&token) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&decrypted_string) {
+                    if let Some(t) = parsed.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
+                        token = t.to_string();
+                    }
+                }
+            }
+        }
+
         let token_data = decode::<Claims>(
-            token,
+            &token,
             &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
             &Validation::default(),
         )
-        .map_err(|e| AppError::Authentication(format!("Invalid or expired token: {}", e)))?;
+        .map_err(|_| AppError::Authentication("Invalid or expired user gateway token".to_string()))?;
 
         Ok(AuthenticatedUser(token_data.claims))
     }

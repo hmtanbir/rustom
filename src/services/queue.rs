@@ -4,7 +4,8 @@ use lapin::{
     types::FieldTable,
     BasicProperties, Channel,
 };
-use crate::domain::{AppError, JobPayload};
+use crate::errors::AppError;
+use crate::models::JobPayload;
 use crate::infrastructure::JOBS_QUEUE;
 
 use async_trait::async_trait;
@@ -138,8 +139,8 @@ async fn process_job(job: &JobPayload) -> Result<(), AppError> {
 
     match job.job_type.as_str() {
         "email" => {
-            let email_to = job.payload.get("to").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let email_body = job.payload.get("body").and_then(|v| v.as_str()).unwrap_or("");
+            let email_to = job.payload.get("to").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("unknown");
+            let email_body = job.payload.get("body").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
             tracing::info!(
                 "Sending email background job -> TO: {}, BODY: {}",
                 email_to,

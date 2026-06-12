@@ -1,0 +1,257 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+/// Wrapper to support Rails `wrap_parameters` behavior.
+/// This seamlessly accepts both `{"user": {...}}` and unwrapped payloads.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum UserPayloadWrapper<T> {
+    Wrapped { user: T },
+    Unwrapped(T),
+}
+
+impl<T> UserPayloadWrapper<T> {
+    pub fn into_inner(self) -> T {
+        match self {
+            Self::Wrapped { user } => user,
+            Self::Unwrapped(inner) => inner,
+        }
+    }
+}
+
+use serde::Deserializer;
+
+fn deserialize_role<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RoleInput {
+        String(String),
+        Int(i32),
+    }
+
+    let opt = Option::<RoleInput>::deserialize(deserializer)?;
+    match opt {
+        Some(RoleInput::String(s)) => match s.to_lowercase().as_str() {
+            "admin" => Ok(Some(0)),
+            "user" => Ok(Some(1)),
+            _ => Err(serde::de::Error::custom(format!("Invalid role: {}", s))),
+        },
+        Some(RoleInput::Int(i)) => Ok(Some(i)),
+        None => Ok(None),
+    }
+}
+
+fn deserialize_status<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StatusInput {
+        String(String),
+        Int(i32),
+    }
+
+    let opt = Option::<StatusInput>::deserialize(deserializer)?;
+    match opt {
+        Some(StatusInput::String(s)) => match s.to_lowercase().as_str() {
+            "inactive" => Ok(Some(0)),
+            "active" => Ok(Some(1)),
+            _ => Err(serde::de::Error::custom(format!("Invalid status: {}", s))),
+        },
+        Some(StatusInput::Int(i)) => Ok(Some(i)),
+        None => Ok(None),
+    }
+}
+
+use serde::Serializer;
+
+fn serialize_role<S>(role: &i32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match role {
+        0 => serializer.serialize_str("admin"),
+        1 => serializer.serialize_str("user"),
+        _ => serializer.serialize_i32(*role),
+    }
+}
+
+fn serialize_status<S>(status: &i32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match status {
+        0 => serializer.serialize_str("inactive"),
+        1 => serializer.serialize_str("active"),
+        _ => serializer.serialize_i32(*status),
+    }
+}
+
+/// Core domain representation of a User in the database.
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct User {
+    /// Unique identifier for user.
+    pub id: Uuid,
+    /// Email address of user.
+    pub email: String,
+    /// Full name of the user.
+    pub name: String,
+    /// Password hash stored securely.
+    pub password_digest: String,
+    /// Role of the user (0 = Admin, 1 = User).
+    pub role: i32,
+    /// Status of the user (0 = Inactive, 1 = Active).
+    pub status: i32,
+    /// Date time when the user registration occurred.
+    pub created_at: DateTime<Utc>,
+    /// Date time when the user last updated details.
+    pub updated_at: DateTime<Utc>,
+    /// Date time when the user was soft-deleted.
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl User {
+    pub fn is_inactive(&self) -> bool {
+        self.deleted_at.is_some() || self.status == 0
+    }
+    
+    pub fn is_admin(&self) -> bool {
+        self.role == 0
+    }
+}
+
+/// Request schema for user registration. (Permitted params)
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)] // Enforce strong parameters
+pub struct UserRegisterRequestDto {
+    #[schema(example = "John Doe")]
+    pub name: String,
+    #[schema(example = "user@example.com")]
+    pub email: String,
+    #[schema(example = "SecretPassword123")]
+    pub password: String,
+}
+
+/// Request schema for user login authentication.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserLoginRequestDto {
+    #[schema(example = "user@example.com")]
+    pub email: String,
+    #[schema(example = "SecretPassword123")]
+    pub password: String,
+}
+
+/// Request schema for user creation by admin (allows role assignment).
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UserCreateRequestDto {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+    #[serde(default, deserialize_with = "deserialize_role")]
+    pub role: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_status")]
+    pub status: Option<i32>,
+}
+
+/// Request schema for user updates (Permitted params).
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct UserUpdateRequestDto {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_role")]
+    pub role: Option<i32>, // Only processed if current user is admin
+    #[serde(default, deserialize_with = "deserialize_status")]
+    pub status: Option<i32>,
+}
+
+/// User details response data transfer object.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserResponseDto {
+    pub id: Uuid,
+    pub name: String,
+    pub email: String,
+    #[schema(value_type = String, example = "user")]
+    #[serde(serialize_with = "serialize_role")]
+    pub role: i32,
+    #[schema(value_type = String, example = "active")]
+    #[serde(serialize_with = "serialize_status")]
+    pub status: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl From<User> for UserResponseDto {
+    fn from(user: User) -> Self {
+        UserResponseDto {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+            deleted_at: user.deleted_at,
+        }
+    }
+}
+
+/// Response schema for successful user authentication.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserLoginResponseDto {
+    pub token: String,
+}
+
+/// JWT Token claim layout.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub user_id: Uuid, // Changed from sub to match Rails (user_id)
+    pub role: i32,
+    pub exp: u64,
+}
+
+/// Pagination parameters.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct PaginationParams {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub role: Option<String>, // 'admin' or 'user'
+    pub deleted: Option<bool>,
+}
+
+impl PaginationParams {
+    pub fn get_page(&self) -> u32 {
+        self.page.unwrap_or(1).max(1)
+    }
+
+    pub fn get_per_page(&self) -> u32 {
+        self.per_page.unwrap_or(10).clamp(1, 100)
+    }
+    
+    pub fn offset(&self) -> u32 {
+        (self.get_page() - 1) * self.get_per_page()
+    }
+}
+
+/// Paginated response metadata.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct PaginatedResponse<T> {
+    pub status: u16,
+    pub message: String,
+    pub data: Vec<T>,
+    pub current_page: u32,
+    pub per_page: u32,
+    pub total_pages: u32,
+    pub total_count: u32,
+    pub next_page: Option<u32>,
+    pub prev_page: Option<u32>,
+}
