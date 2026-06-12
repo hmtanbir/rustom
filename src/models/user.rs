@@ -69,29 +69,6 @@ where
     }
 }
 
-use serde::Serializer;
-
-fn serialize_role<S>(role: &i32, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match role {
-        0 => serializer.serialize_str("admin"),
-        1 => serializer.serialize_str("user"),
-        _ => serializer.serialize_i32(*role),
-    }
-}
-
-fn serialize_status<S>(status: &i32, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match status {
-        0 => serializer.serialize_str("inactive"),
-        1 => serializer.serialize_str("active"),
-        _ => serializer.serialize_i32(*status),
-    }
-}
 
 /// Core domain representation of a User in the database.
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -173,37 +150,6 @@ pub struct UserUpdateRequestDto {
     pub status: Option<i32>,
 }
 
-/// User details response data transfer object.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct UserResponseDto {
-    pub id: Uuid,
-    pub name: String,
-    pub email: String,
-    #[schema(value_type = String, example = "user")]
-    #[serde(serialize_with = "serialize_role")]
-    pub role: i32,
-    #[schema(value_type = String, example = "active")]
-    #[serde(serialize_with = "serialize_status")]
-    pub status: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub deleted_at: Option<DateTime<Utc>>,
-}
-
-impl From<User> for UserResponseDto {
-    fn from(user: User) -> Self {
-        UserResponseDto {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-            created_at: user.created_at,
-            updated_at: user.updated_at,
-            deleted_at: user.deleted_at,
-        }
-    }
-}
 
 /// Response schema for successful user authentication.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]

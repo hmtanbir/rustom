@@ -44,16 +44,22 @@ pub async fn setup_app() -> (Router, PgPool) {
         host: "127.0.0.1".to_string(),
         port: 3000,
         database_url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/rustom_development".to_string()),
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/rustom_test".to_string()),
         redis_url: "redis://127.0.0.1:6379/0".to_string(),
         rabbitmq_url: "amqp://127.0.0.1:5672/%2f".to_string(),
         jwt_secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_for_tests_123456789".to_string()),
         jwt_expiration_seconds: 3600,
     };
 
-    let db = PgPool::connect(&config.database_url)
+    let db = rustom::infrastructure::init_db(&config)
         .await
-        .expect("Failed to connect to test DB");
+        .expect("Failed to initialize test DB and run migrations");
+        
+    // Clean all tables before the test runs to ensure a clean state
+    sqlx::query!("TRUNCATE TABLE users CASCADE;")
+        .execute(&db)
+        .await
+        .expect("Failed to truncate tables");
     
     let cache_service = Arc::new(MockCache) as DynCacheService;
     let queue_publisher = Arc::new(MockQueue) as DynQueueService;

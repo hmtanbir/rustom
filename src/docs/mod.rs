@@ -11,14 +11,14 @@ use crate::models;
     paths(),
     components(
         schemas(
-            models::UserResponseDto,
+            crate::serializers::user_serializer::UserSerializer,
             models::UserRegisterRequestDto,
             models::UserLoginRequestDto,
             models::UserLoginResponseDto,
             models::UserCreateRequestDto,
             models::UserUpdateRequestDto,
             models::PaginationParams,
-            models::PaginatedResponse<models::UserResponseDto>,
+            models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
         )
     ),
     modifiers(&SecurityAddon),

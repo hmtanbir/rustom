@@ -81,7 +81,7 @@ If you prefer to run the Rust application natively on your machine, you must hav
    Then, create the database and apply the schema migrations:
    ```bash
    sqlx database create
-   sqlx migrate run
+   sqlx migrate run --source db/migrations
    ```
 
    #### 🌐 Target Other Environments (Test, Production, etc.)
@@ -91,23 +91,23 @@ If you prefer to run the Rust application natively on your machine, you must hav
    ```bash
    # Option 1: Inline environment variable
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx database create
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx migrate run
+   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx migrate run --source db/migrations
    
    # Option 2: Using the DATABASE_URL flag (-D)
    sqlx database create -D postgres://postgres:postgres@localhost:5432/rustom_test
-   sqlx migrate run -D postgres://postgres:postgres@localhost:5432/rustom_test
+   sqlx migrate run --source db/migrations -D postgres://postgres:postgres@localhost:5432/rustom_test
    ```
 
    **For Production Environment:**
    ```bash
    DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx database create
-   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx migrate run
+   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx migrate run --source db/migrations
    ```
 
    
    If you need to **rollback/revert** the latest migration, you can use:
    ```bash
-   sqlx migrate revert
+   sqlx migrate revert --source db/migrations
    ```
 
    To **seed data** into the database using SQLx, you can run the SQL files in the `db/seeds/` directory as a custom migration source (using `--ignore-missing` so SQLx ignores standard migrations from the default folder):
@@ -119,7 +119,7 @@ If you prefer to run the Rust application natively on your machine, you must hav
    
    *Option A: Reset the database completely (standard for local development)*
    ```bash
-   sqlx database reset
+   sqlx database reset -y --source db/migrations
    sqlx migrate run --source db/seeds --ignore-missing
    ```
    
@@ -164,6 +164,18 @@ APP_ENV=production cargo run
 
 # Run in test environment
 APP_ENV=test cargo run
+```
+
+## 🗑️ Clearing the Cache
+
+The application uses Redis to cache API responses (such as the paginated users index). If you need to instantly wipe the cache and force the API to fetch fresh data from the database, you can run:
+
+```bash
+# If running Redis via Docker Compose
+docker compose exec redis redis-cli flushall
+
+# If running Redis natively
+redis-cli flushall
 ```
 
 ## 📚 API Documentation

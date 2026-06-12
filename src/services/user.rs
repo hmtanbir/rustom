@@ -11,9 +11,10 @@ use chrono::Utc;
 use crate::config::AppConfig;
 use crate::models::{
     Claims, User, UserLoginRequestDto, UserLoginResponseDto,
-    UserRegisterRequestDto, UserResponseDto, UserCreateRequestDto, UserUpdateRequestDto,
+    UserRegisterRequestDto, UserCreateRequestDto, UserUpdateRequestDto,
     PaginationParams, PaginatedResponse
 };
+use crate::serializers::user_serializer::UserSerializer;
 use crate::services::cache::DynCacheService;
 
 #[derive(Clone)]
@@ -28,7 +29,7 @@ impl UserService {
         Self { db, cache, config }
     }
 
-    pub async fn register(&self, dto: UserRegisterRequestDto) -> Result<UserResponseDto, AppError> {
+    pub async fn register(&self, dto: UserRegisterRequestDto) -> Result<UserSerializer, AppError> {
         let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
             .bind(&dto.email)
             .fetch_optional(&self.db)
@@ -61,7 +62,7 @@ impl UserService {
 
         tx.commit().await?;
 
-        Ok(UserResponseDto::from(user))
+        Ok(UserSerializer::from(user))
     }
 
     pub async fn login(&self, dto: UserLoginRequestDto) -> Result<UserLoginResponseDto, AppError> {
@@ -106,7 +107,7 @@ impl UserService {
         Ok(UserLoginResponseDto { token })
     }
 
-    pub async fn get_users_paginated(&self, params: PaginationParams) -> Result<PaginatedResponse<UserResponseDto>, AppError> {
+    pub async fn get_users_paginated(&self, params: PaginationParams) -> Result<PaginatedResponse<UserSerializer>, AppError> {
         let cache_key = format!(
             "users_index/{}/{}/{}/{}/{}",
             params.role.as_deref().unwrap_or("all"),
@@ -117,7 +118,7 @@ impl UserService {
         );
 
         if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
-            && let Ok(cached) = serde_json::from_str::<PaginatedResponse<UserResponseDto>>(&cached_str) {
+            && let Ok(cached) = serde_json::from_str::<PaginatedResponse<UserSerializer>>(&cached_str) {
                 return Ok(cached);
             }
 
@@ -156,7 +157,7 @@ impl UserService {
         let response = PaginatedResponse {
             status: 200,
             message: "Successfully data fetched".to_string(),
-            data: users.into_iter().map(UserResponseDto::from).collect(),
+            data: users.into_iter().map(UserSerializer::from).collect(),
             current_page: params.get_page(),
             per_page: params.get_per_page(),
             total_pages,
@@ -173,11 +174,11 @@ impl UserService {
         Ok(response)
     }
 
-    pub async fn get_user(&self, user_id: Uuid) -> Result<UserResponseDto, AppError> {
+    pub async fn get_user(&self, user_id: Uuid) -> Result<UserSerializer, AppError> {
         let cache_key = format!("user:profile:{}", user_id);
 
         if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
-            && let Ok(cached_user) = serde_json::from_str::<UserResponseDto>(&cached_str) {
+            && let Ok(cached_user) = serde_json::from_str::<UserSerializer>(&cached_str) {
                 return Ok(cached_user);
             }
 
@@ -187,7 +188,7 @@ impl UserService {
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-        let user_dto = UserResponseDto::from(user);
+        let user_dto = UserSerializer::from(user);
 
         if let Ok(json_str) = serde_json::to_string(&user_dto) {
             let ttl = std::env::var("API_CACHE_TTL").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600);
@@ -197,7 +198,7 @@ impl UserService {
         Ok(user_dto)
     }
 
-    pub async fn create_user(&self, dto: UserCreateRequestDto) -> Result<UserResponseDto, AppError> {
+    pub async fn create_user(&self, dto: UserCreateRequestDto) -> Result<UserSerializer, AppError> {
         let salt = SaltString::generate(&mut OsRng);
         let password_digest = Argon2::default()
             .hash_password(dto.password.as_bytes(), &salt)
@@ -222,10 +223,10 @@ impl UserService {
 
         tx.commit().await?;
 
-        Ok(UserResponseDto::from(user))
+        Ok(UserSerializer::from(user))
     }
 
-    pub async fn update_user(&self, user_id: Uuid, dto: UserUpdateRequestDto) -> Result<UserResponseDto, AppError> {
+    pub async fn update_user(&self, user_id: Uuid, dto: UserUpdateRequestDto) -> Result<UserSerializer, AppError> {
         let mut tx = self.db.begin().await?;
         
         let _existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
@@ -259,7 +260,7 @@ impl UserService {
         let cache_key = format!("user:profile:{}", user_id);
         let _ = self.cache.delete(&cache_key).await;
 
-        Ok(UserResponseDto::from(user))
+        Ok(UserSerializer::from(user))
     }
 
     pub async fn soft_delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
