@@ -1,38 +1,43 @@
 use utoipa::{
-    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
-use crate::api::handlers;
-use crate::domain;
+// use crate::controllers::api::v1::{registration_controller, sessions_controller, users_controller};
+use crate::models;
 
 /// Master OpenAPI structure aggregating all handlers, schemas, and security rules.
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        handlers::auth::register_handler,
-        handlers::auth::login_handler,
-        handlers::user::get_profile_handler,
-        handlers::user::update_role_handler,
-        handlers::job::create_job_handler,
+        crate::controllers::api::v1::registration_controller::registration,
+        crate::controllers::api::v1::sessions_controller::create,
+        crate::controllers::api::v1::users_controller::index,
+        crate::controllers::api::v1::users_controller::show,
+        crate::controllers::api::v1::users_controller::me,
+        crate::controllers::api::v1::users_controller::update_me,
+        crate::controllers::api::v1::users_controller::create,
+        crate::controllers::api::v1::users_controller::update,
+        crate::controllers::api::v1::users_controller::destroy,
     ),
     components(
         schemas(
-            domain::UserResponseDto,
-            domain::UserRegisterRequestDto,
-            domain::UserLoginRequestDto,
-            domain::UserLoginResponseDto,
-            domain::UserRole,
-            domain::JobPayload,
-            domain::CreateJobRequestDto,
-            domain::CreateJobResponseDto,
-            handlers::user::UpdateRoleRequestDto,
+            crate::serializers::user_serializer::UserSerializer,
+            crate::serializers::user_serializer::UserResponseDto,
+            crate::serializers::user_serializer::SessionResponseDto,
+            crate::serializers::user_serializer::ErrorResponseDto,
+            models::UserRegisterRequestDto,
+            models::UserLoginRequestDto,
+            models::UserLoginResponseDto,
+            models::UserCreateRequestDto,
+            models::UserUpdateRequestDto,
+            models::PaginationParams,
+            models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
         )
     ),
     modifiers(&SecurityAddon),
     tags(
-        (name = "Auth", description = "Authentication and Authorization Endpoints"),
-        (name = "Users", description = "User management and profile actions"),
-        (name = "Jobs", description = "Asynchronous queue triggers")
+        (name = "Auth", description = "Authentication and Registration"),
+        (name = "Users", description = "User Management")
     )
 )]
 pub struct ApiDoc;

@@ -51,7 +51,7 @@ The easiest way to run the application locally is using Docker Compose. This spi
    docker compose up --build
    ```
 
-The API will be available at `http://localhost:8080`.
+The API will be available at `http://localhost:3000`.
 
 ## 💻 Running Natively (Without Docker)
 
@@ -62,13 +62,8 @@ If you prefer to run the Rust application natively on your machine, you must hav
    docker compose up postgres redis rabbitmq -d
    ```
 
-2. **Configure your `.env` file:**
-   Make sure the `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` point to your running instances.
-   ```env
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_db
-   REDIS_URL=redis://localhost:6379/0
-   RABBITMQ_URL=amqp://guest:guest@localhost:5672/%2f
-   ```
+2. **Configure your `.env` and `.env.test` and `.env.production` files:**
+   Make sure the database, Redis, and RabbitMQ connection variables point to your running instances.
 
 3. **Create the Database & Run Migrations:**
    You must create the database before running the application natively. You can use `sqlx-cli` to handle this.
@@ -81,8 +76,10 @@ If you prefer to run the Rust application natively on your machine, you must hav
    Then, create the database and apply the schema migrations:
    ```bash
    sqlx database create
-   sqlx migrate run
+   sqlx migrate run --source db/migrations
    ```
+
+
 
    #### 🌐 Target Other Environments (Test, Production, etc.)
    Since `sqlx-cli` reads from `.env` by default and does not natively parse `APP_ENV` to switch files, you need to explicitly supply the database URL for other environments. You can do this by setting the `DATABASE_URL` inline or using the `-D` flag:
@@ -90,24 +87,24 @@ If you prefer to run the Rust application natively on your machine, you must hav
    **For Test Environment:**
    ```bash
    # Option 1: Inline environment variable
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx database create
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx migrate run
+   sqlx database create
+   sqlx migrate run --source db/migrations
    
    # Option 2: Using the DATABASE_URL flag (-D)
    sqlx database create -D postgres://postgres:postgres@localhost:5432/rustom_test
-   sqlx migrate run -D postgres://postgres:postgres@localhost:5432/rustom_test
+   sqlx migrate run --source db/migrations -D postgres://postgres:postgres@localhost:5432/rustom_test
    ```
 
    **For Production Environment:**
    ```bash
-   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx database create
-   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx migrate run
+   sqlx database create
+   sqlx migrate run --source db/migrations
    ```
 
    
    If you need to **rollback/revert** the latest migration, you can use:
    ```bash
-   sqlx migrate revert
+   sqlx migrate revert --source db/migrations
    ```
 
    To **seed data** into the database using SQLx, you can run the SQL files in the `db/seeds/` directory as a custom migration source (using `--ignore-missing` so SQLx ignores standard migrations from the default folder):
@@ -119,7 +116,7 @@ If you prefer to run the Rust application natively on your machine, you must hav
    
    *Option A: Reset the database completely (standard for local development)*
    ```bash
-   sqlx database reset
+   sqlx database reset -y --source db/migrations
    sqlx migrate run --source db/seeds --ignore-missing
    ```
    
@@ -132,12 +129,6 @@ If you prefer to run the Rust application natively on your machine, you must hav
       ```bash
       sqlx migrate run --source db/seeds --ignore-missing
       ```
-
-   *(Alternative)* Using Docker Compose:
-   ```bash
-   docker compose exec -T postgres psql -U postgres -d rustom_db < db/seeds/20260612000001_seed_users.sql
-   ```
-
 
 4. **Run the application:**
    ```bash
@@ -166,12 +157,24 @@ APP_ENV=production cargo run
 APP_ENV=test cargo run
 ```
 
+## 🗑️ Clearing the Cache
+
+The application uses Redis to cache API responses (such as the paginated users index). If you need to instantly wipe the cache and force the API to fetch fresh data from the database, you can run:
+
+```bash
+# If running Redis via Docker Compose
+docker compose exec redis redis-cli flushall
+
+# If running Redis natively
+redis-cli flushall
+```
+
 ## 📚 API Documentation
 
 Once the server is running, you can explore and test the API endpoints using the auto-generated Swagger UI interface.
 
 Navigate to:
-👉 **[http://localhost:8080/api/docs](http://localhost:8080/api/docs)**
+👉 **[http://localhost:3000/api-docs](http://localhost:3000/api-docs)**
 
 ## 🧪 Running Tests
 
@@ -181,6 +184,15 @@ To execute the unit and integration tests:
 cargo test
 ```
 
+## 🧹 Linting and Formatting
+
+To check for and automatically apply Clippy fixes:
+
+```bash
+cargo clippy --fix --lib -p rustom --allow-dirty
+```
+
 ## 📜 License
 
 This project is open-source and available under the [MIT License](LICENSE).
+
