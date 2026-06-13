@@ -1,14 +1,12 @@
-use axum::{
-    Extension, Router,
-};
+use axum::{Extension, Router};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::app_state::AppState;
 use crate::controllers::api_routes;
-use utoipa::OpenApi;
 use crate::docs::ApiDoc;
-use crate::middleware::{verify_api_gateway_key, payload_encryption};
+use crate::middleware::{payload_encryption, verify_api_gateway_key};
+use utoipa::OpenApi;
 
 /// Build the Axum Router configuring routes, CORS, logging, and Swagger UI.
 pub fn create_router(state: AppState) -> Router {

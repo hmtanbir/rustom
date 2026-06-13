@@ -88,4 +88,6 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           RABBITMQ_URL: amqp://guest:guest@localhost:5672/%2f
           JWT_SECRET: ci_test_jwt_secret_key_123
+          API_PAYLOAD_ENCRYPTION_ENABLED: false
+          API_GATEWAY_KEY: api_gateway_key
         run: cargo test

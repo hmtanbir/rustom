@@ -11,6 +11,6 @@ pub mod middleware;
 pub mod models;
 pub mod policies;
 
+pub mod extractors;
 pub mod serializers;
 pub mod services;
-pub mod extractors;

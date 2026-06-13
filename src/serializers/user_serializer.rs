@@ -1,8 +1,8 @@
+use crate::models::user::User;
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
-use crate::models::user::User;
 
 /// User details response serialized format.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
@@ -21,12 +21,14 @@ pub struct UserSerializer {
 
 impl From<User> for UserSerializer {
     fn from(user: User) -> Self {
-        let role_str = crate::models::user::ROLES_MAP.iter()
+        let role_str = crate::models::user::ROLES_MAP
+            .iter()
             .find(|&(_, &val)| val == user.role)
             .map(|(key, _)| key.clone())
             .unwrap_or_else(|| user.role.to_string());
 
-        let status_str = crate::models::user::STATUSES_MAP.iter()
+        let status_str = crate::models::user::STATUSES_MAP
+            .iter()
             .find(|&(_, &val)| val == user.status)
             .map(|(key, _)| key.clone())
             .unwrap_or_else(|| user.status.to_string());
@@ -67,4 +69,3 @@ pub struct ErrorResponseDto {
     pub message: String,
     pub data: Option<serde_json::Value>,
 }
-

@@ -1,10 +1,9 @@
+use crate::errors::AppError;
 use axum::{
-    async_trait,
+    Json, async_trait,
     extract::{FromRequest, Request},
-    Json,
 };
 use serde::de::DeserializeOwned;
-use crate::errors::AppError;
 
 pub struct AppJson<T>(pub T);
 

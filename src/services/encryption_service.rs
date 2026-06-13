@@ -1,8 +1,8 @@
 use aes_gcm::{
+    Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce, Key
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::RngCore;
 use std::env;
 
@@ -22,10 +22,14 @@ impl EncryptionService {
                 key_bytes.copy_from_slice(&decoded);
                 Ok(*Key::<Aes256Gcm>::from_slice(&key_bytes))
             } else {
-                Err(anyhow::anyhow!("API_ENCRYPTION_KEY must be a valid 64-character hex string"))
+                Err(anyhow::anyhow!(
+                    "API_ENCRYPTION_KEY must be a valid 64-character hex string"
+                ))
             }
         } else {
-            Err(anyhow::anyhow!("API_ENCRYPTION_KEY must be exactly 64 characters of hex"))
+            Err(anyhow::anyhow!(
+                "API_ENCRYPTION_KEY must be exactly 64 characters of hex"
+            ))
         }
     }
 
@@ -38,7 +42,8 @@ impl EncryptionService {
         let nonce = Nonce::from_slice(&nonce_bytes); // 96-bits; unique per message
 
         // In aes-gcm crate, encrypt returns a Vec<u8> which is Ciphertext + AuthTag concatenated
-        let ciphertext = cipher.encrypt(nonce, plain_text.as_bytes())
+        let ciphertext = cipher
+            .encrypt(nonce, plain_text.as_bytes())
             .map_err(|e| anyhow::anyhow!("Encryption failure: {:?}", e))?;
 
         // Combine IV (Nonce) + Ciphertext + AuthTag
@@ -50,7 +55,8 @@ impl EncryptionService {
     }
 
     pub fn decrypt(base64_payload: &str) -> anyhow::Result<String> {
-        let decoded = BASE64.decode(base64_payload)
+        let decoded = BASE64
+            .decode(base64_payload)
             .map_err(|e| anyhow::anyhow!("Base64 decode failure: {}", e))?;
 
         if decoded.len() < 28 {
@@ -65,7 +71,8 @@ impl EncryptionService {
         let nonce = Nonce::from_slice(nonce_bytes);
 
         // The decrypt function automatically verifies the AuthTag at the end of the ciphertext
-        let plaintext = cipher.decrypt(nonce, ciphertext_with_tag)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext_with_tag)
             .map_err(|e| anyhow::anyhow!("Decryption failure or AuthTag mismatch: {:?}", e))?;
 
         Ok(String::from_utf8(plaintext)?)

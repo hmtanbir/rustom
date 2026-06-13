@@ -1,9 +1,8 @@
 pub mod v1;
 
-use axum::Router;
 use crate::app_state::AppState;
+use axum::Router;
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .nest("/v1", v1::routes())
+    Router::new().nest("/v1", v1::routes())
 }

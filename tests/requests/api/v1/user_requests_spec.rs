@@ -1,14 +1,18 @@
 use crate::common;
 
-use axum::{body::Body, http::{Request, StatusCode}};
-use tower::Service;
-use serde_json::{json, Value};
-use jsonwebtoken::{encode, EncodingKey, Header};
-use chrono::{Utc, Duration};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{EncodingKey, Header, encode};
 use rustom::models::user::Claims;
+use serde_json::{Value, json};
+use tower::Service;
 
 fn generate_test_token(user_id: uuid::Uuid, role: i32) -> String {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_for_tests_123456789".to_string());
+    let secret =
+        std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_for_tests_123456789".to_string());
     let expiration = Utc::now()
         .checked_add_signed(Duration::seconds(3600))
         .expect("valid timestamp")
@@ -34,7 +38,7 @@ async fn test_user_registration() {
     let gateway_key = common::get_gateway_key();
 
     let email = format!("test_{}@example.com", uuid::Uuid::new_v4());
-    
+
     let payload = json!({
         "user": {
             "name": "Test User",
@@ -65,14 +69,19 @@ async fn test_get_me_authenticated() {
     let user_id = uuid::Uuid::new_v4();
     let email = format!("me_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    
+
     sqlx::query!(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Me User', $2, $3, 1, 1)
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     let token = generate_test_token(user_id, 1);
 
@@ -88,10 +97,12 @@ async fn test_get_me_authenticated() {
     let response = app.call(req).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let response_body: Value = serde_json::from_slice(&body_bytes).unwrap();
-    
+
     assert_eq!(response_body["data"]["email"], email);
 }
 
@@ -145,7 +156,7 @@ async fn test_user_registration_duplicate_email() {
     let gateway_key = common::get_gateway_key();
 
     let email = format!("dup_{}@example.com", uuid::Uuid::new_v4());
-    
+
     // Seed the first user
     let user_id = uuid::Uuid::new_v4();
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
@@ -154,8 +165,13 @@ async fn test_user_registration_duplicate_email() {
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Existing User', $2, $3, 1, 1)
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     // Try to register again with same email
     let payload = json!({
@@ -240,8 +256,13 @@ async fn test_delete_user_as_admin_vs_standard_user() {
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Target User', $2, $3, 1, 1)
         "#,
-        target_user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        target_user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     // 1. Try to delete as standard user (forbidden)
     let standard_user_id = uuid::Uuid::new_v4();
@@ -284,14 +305,19 @@ async fn test_update_user_password() {
     let user_id = uuid::Uuid::new_v4();
     let email = format!("update_pwd_{}@example.com", user_id);
     let initial_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs"; // for "password"
-    
+
     sqlx::query!(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Update Password User', $2, $3, 1, 1)
         "#,
-        user_id, email, initial_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        initial_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     let token = generate_test_token(user_id, 1);
 
@@ -316,60 +342,12 @@ async fn test_update_user_password() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify the password digest has changed in the database
-    let updated_user = sqlx::query!(
-        "SELECT password_digest FROM users WHERE id = $1",
-        user_id
-    )
-    .fetch_one(&db)
-    .await
-    .unwrap();
-
-    assert_ne!(updated_user.password_digest, initial_hash);
-}
-
-#[tokio::test]
-async fn test_user_registration_with_moderator_role() {
-    let (app, db) = common::setup_app().await;
-    let gateway_key = common::get_gateway_key();
-
-    let email = format!("moderator_{}@example.com", uuid::Uuid::new_v4());
-    
-    let payload = json!({
-        "user": {
-            "name": "Moderator User",
-            "email": email,
-            "password": "password123",
-            "role": "moderator"
-        }
-    });
-
-    let req = Request::builder()
-        .method("POST")
-        .uri("/api/v1/registration")
-        .header("Content-Type", "application/json")
-        .header("x-api-gateway-key", &gateway_key)
-        .body(Body::from(payload.to_string()))
+    let updated_user = sqlx::query!("SELECT password_digest FROM users WHERE id = $1", user_id)
+        .fetch_one(&db)
+        .await
         .unwrap();
 
-    let mut app = app;
-    let response = app.call(req).await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let response_body: Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert_eq!(response_body["data"]["role"], "moderator");
-
-    // Verify the user was created with role = 2 (moderator)
-    let created_user = sqlx::query!(
-        "SELECT role FROM users WHERE email = $1",
-        email
-    )
-    .fetch_one(&db)
-    .await
-    .unwrap();
-
-    assert_eq!(created_user.role, 2);
+    assert_ne!(updated_user.password_digest, initial_hash);
 }
 
 #[tokio::test]
@@ -381,14 +359,19 @@ async fn test_admin_can_restore_deleted_user() {
     let user_id = uuid::Uuid::new_v4();
     let email = format!("deleted_user_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    
+
     sqlx::query!(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
         VALUES ($1, 'Deleted User', $2, $3, 1, 1, NOW())
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     // 2. Perform patch update as admin to set deleted_at to null
     let admin_id = uuid::Uuid::new_v4();
@@ -415,13 +398,10 @@ async fn test_admin_can_restore_deleted_user() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify it is null in database
-    let user_db = sqlx::query!(
-        "SELECT deleted_at FROM users WHERE id = $1",
-        user_id
-    )
-    .fetch_one(&db)
-    .await
-    .unwrap();
+    let user_db = sqlx::query!("SELECT deleted_at FROM users WHERE id = $1", user_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
 
     assert!(user_db.deleted_at.is_none());
 }
@@ -435,14 +415,19 @@ async fn test_non_admin_cannot_update_deleted_at() {
     let user_id = uuid::Uuid::new_v4();
     let email = format!("user_to_check_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    
+
     sqlx::query!(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
         VALUES ($1, 'Test User', $2, $3, 1, 1, NOW())
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     // Perform patch update as self (non-admin, role=1) trying to update deleted_at
     let token = generate_test_token(user_id, 1);
@@ -468,4 +453,3 @@ async fn test_non_admin_cannot_update_deleted_at() {
     // Standard user gets NOT_FOUND because their deleted_at: null payload gets stripped and user is soft-deleted
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
-

@@ -1,12 +1,12 @@
+use crate::errors::AppError;
+use crate::infrastructure::JOBS_QUEUE;
+use crate::models::JobPayload;
 use futures_util::stream::StreamExt;
 use lapin::{
+    BasicProperties, Channel,
     options::{BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicRejectOptions},
     types::FieldTable,
-    BasicProperties, Channel,
 };
-use crate::errors::AppError;
-use crate::models::JobPayload;
-use crate::infrastructure::JOBS_QUEUE;
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -40,7 +40,8 @@ impl QueueService for RabbitMQQueueService {
             AppError::Unexpected(anyhow::anyhow!("Failed to serialize job payload: {}", e))
         })?;
 
-        let confirm = self.channel
+        let confirm = self
+            .channel
             .basic_publish(
                 "", // Default exchange
                 JOBS_QUEUE,
@@ -54,9 +55,9 @@ impl QueueService for RabbitMQQueueService {
             .map_err(AppError::Queue)?;
 
         if !confirm.is_ack() {
-            return Err(AppError::Queue(lapin::Error::IOError(std::sync::Arc::new(std::io::Error::other(
-                "Message was not acknowledged by RabbitMQ broker",
-            )))));
+            return Err(AppError::Queue(lapin::Error::IOError(std::sync::Arc::new(
+                std::io::Error::other("Message was not acknowledged by RabbitMQ broker"),
+            ))));
         }
 
         tracing::info!("Job {} published successfully.", job.job_id);
@@ -66,7 +67,6 @@ impl QueueService for RabbitMQQueueService {
 
 /// Dynamic trait object for QueueService.
 pub type DynQueueService = Arc<dyn QueueService>;
-
 
 /// Spawns a non-blocking Tokio background worker task to consume and process RabbitMQ messages.
 pub fn start_queue_consumer(channel: Channel) {
@@ -120,20 +120,24 @@ pub fn start_queue_consumer(channel: Channel) {
 
             match process_result {
                 Ok(_) => {
-                    tracing::info!("Job {} completed successfully. Acknowledging...", payload.job_id);
+                    tracing::info!(
+                        "Job {} completed successfully. Acknowledging...",
+                        payload.job_id
+                    );
                     if let Err(e) = delivery.ack(BasicAckOptions::default()).await {
                         tracing::error!("Failed to acknowledge message: {:?}", e);
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to process job {}: {:?}. Rejecting...", payload.job_id, e);
+                    tracing::error!(
+                        "Failed to process job {}: {:?}. Rejecting...",
+                        payload.job_id,
+                        e
+                    );
                     // Reject the message without requeuing to prevent poison pill loops.
                     // In a production system, a Dead Letter Exchange (DLX) should be configured
                     // on the queue to capture these failed messages.
-                    if let Err(re) = delivery
-                        .reject(BasicRejectOptions { requeue: false })
-                        .await
-                    {
+                    if let Err(re) = delivery.reject(BasicRejectOptions { requeue: false }).await {
                         tracing::error!("Failed to reject message: {:?}", re);
                     }
                 }
@@ -149,8 +153,16 @@ async fn process_job(job: &JobPayload) -> Result<(), AppError> {
 
     match job.job_type.as_str() {
         "email" => {
-            let email_to = job.payload.get("to").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let email_body = job.payload.get("body").and_then(|v| v.as_str()).unwrap_or("");
+            let email_to = job
+                .payload
+                .get("to")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let email_body = job
+                .payload
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             tracing::info!(
                 "Sending email background job -> TO: {}, BODY: {}",
                 email_to,

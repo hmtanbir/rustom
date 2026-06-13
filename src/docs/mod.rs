@@ -1,6 +1,6 @@
 use utoipa::{
-    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 // use crate::controllers::api::v1::{registration_controller, sessions_controller, users_controller};
 use crate::models;

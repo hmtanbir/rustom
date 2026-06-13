@@ -1,8 +1,11 @@
 use crate::common;
 
-use axum::{body::Body, http::{Request, StatusCode}};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use serde_json::{Value, json};
 use tower::Service;
-use serde_json::{json, Value};
 
 #[tokio::test]
 async fn test_successful_login() {
@@ -14,14 +17,19 @@ async fn test_successful_login() {
     let email = format!("test_{}@example.com", user_id);
     // Hardcoded Argon2 hash for 'password'
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    
+
     sqlx::query!(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Login Test User', $2, $3, 1, 1)
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     let payload = json!({
         "email": email,
@@ -40,10 +48,12 @@ async fn test_successful_login() {
     let response = app.call(req).await.unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let response_body: Value = serde_json::from_slice(&body_bytes).unwrap();
-    
+
     assert!(response_body["data"]["token"].is_string());
 }
 
@@ -109,8 +119,13 @@ async fn test_login_inactive_or_deleted_user() {
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Inactive User', $2, $3, 1, 0)
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     let payload = json!({
         "email": email,
@@ -146,8 +161,13 @@ async fn test_login_suspended_user() {
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Suspended User', $2, $3, 1, 2)
         "#,
-        user_id, email, password_hash
-    ).execute(&db).await.unwrap();
+        user_id,
+        email,
+        password_hash
+    )
+    .execute(&db)
+    .await
+    .unwrap();
 
     let payload = json!({
         "email": email,
@@ -167,5 +187,3 @@ async fn test_login_suspended_user() {
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
-
-

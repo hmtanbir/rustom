@@ -1,6 +1,6 @@
-use sqlx::{postgres::PgPoolOptions, PgPool};
 use crate::config::AppConfig;
 use crate::errors::AppError;
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
 /// Initialize and configure the PostgreSQL connection pool.
 /// Automatically runs pending database migrations upon establishment.
@@ -17,7 +17,8 @@ pub async fn init_db(config: &AppConfig) -> Result<PgPool, AppError> {
     tracing::info!("Applying pending migrations...");
     let mut migrator = sqlx::migrate!("./db/migrations");
     migrator.set_ignore_missing(true);
-    let _: () = migrator.run(&pool)
+    let _: () = migrator
+        .run(&pool)
         .await
         .map_err(|e| AppError::Unexpected(anyhow::anyhow!("Migration failed: {}", e)))?;
 

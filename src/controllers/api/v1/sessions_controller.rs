@@ -1,10 +1,10 @@
-use axum::{extract::State, http::StatusCode, Json};
-use serde_json::{json, Value};
+use axum::{Json, extract::State, http::StatusCode};
+use serde_json::{Value, json};
 
 use crate::app_state::AppState;
 use crate::errors::AppError;
-use crate::models::{UserLoginRequestDto, UserPayloadWrapper};
 use crate::extractors::AppJson;
+use crate::models::{UserLoginRequestDto, UserPayloadWrapper};
 
 #[utoipa::path(
     post,
@@ -25,7 +25,9 @@ pub async fn create(
     let payload = payload_wrapper.into_inner();
 
     if payload.email.trim().is_empty() || payload.password.trim().is_empty() {
-        return Err(AppError::InvalidInput("invalid email or password".to_string()));
+        return Err(AppError::InvalidInput(
+            "invalid email or password".to_string(),
+        ));
     }
 
     // Attempt login via service

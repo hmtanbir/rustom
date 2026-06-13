@@ -1,18 +1,17 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
-use jsonwebtoken::{encode, Header, EncodingKey};
+use chrono::Utc;
+use jsonwebtoken::{EncodingKey, Header, encode};
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::errors::AppError;
-use chrono::Utc;
 
 use crate::config::AppConfig;
+use crate::errors::AppError;
 use crate::models::{
-    Claims, User, UserLoginRequestDto, UserLoginResponseDto,
-    UserRegisterRequestDto, UserCreateRequestDto, UserUpdateRequestDto,
-    PaginationParams, PaginatedResponse
+    Claims, PaginatedResponse, PaginationParams, User, UserCreateRequestDto, UserLoginRequestDto,
+    UserLoginResponseDto, UserRegisterRequestDto, UserUpdateRequestDto,
 };
 use crate::serializers::user_serializer::UserSerializer;
 use crate::services::cache::DynCacheService;
@@ -36,7 +35,9 @@ impl UserService {
             .await?;
 
         if existing.is_some() {
-            return Err(AppError::Conflict("Email is already registered".to_string()));
+            return Err(AppError::Conflict(
+                "Email is already registered".to_string(),
+            ));
         }
 
         let salt = SaltString::generate(&mut OsRng);
@@ -52,7 +53,7 @@ impl UserService {
             INSERT INTO users (name, email, password_digest, role, status)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-            "#
+            "#,
         )
         .bind(&dto.name)
         .bind(&dto.email)
@@ -97,13 +98,17 @@ impl UserService {
         };
 
         if !is_valid || user.is_none() {
-            return Err(AppError::Authentication("Invalid email or password".to_string()));
+            return Err(AppError::Authentication(
+                "Invalid email or password".to_string(),
+            ));
         }
 
         let user = user.unwrap();
 
         if user.is_inactive() {
-            return Err(AppError::Authentication("User is inactive or suspended".to_string()));
+            return Err(AppError::Authentication(
+                "User is inactive or suspended".to_string(),
+            ));
         }
 
         let exp = Utc::now()
@@ -129,9 +134,17 @@ impl UserService {
         Ok(UserLoginResponseDto { token })
     }
 
-    pub async fn get_users_paginated(&self, params: PaginationParams) -> Result<PaginatedResponse<UserSerializer>, AppError> {
-        let version = self.cache.get("users_index_version").await.unwrap_or_default().unwrap_or_else(|| "0".to_string());
-        
+    pub async fn get_users_paginated(
+        &self,
+        params: PaginationParams,
+    ) -> Result<PaginatedResponse<UserSerializer>, AppError> {
+        let version = self
+            .cache
+            .get("users_index_version")
+            .await
+            .unwrap_or_default()
+            .unwrap_or_else(|| "0".to_string());
+
         let cache_key = format!(
             "users_index/{}/{}/{}/{}/{}",
             params.role.as_deref().unwrap_or("all"),
@@ -142,16 +155,21 @@ impl UserService {
         );
 
         if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
-            && let Ok(cached) = serde_json::from_str::<PaginatedResponse<UserSerializer>>(&cached_str) {
-                return Ok(cached);
-            }
+            && let Ok(cached) =
+                serde_json::from_str::<PaginatedResponse<UserSerializer>>(&cached_str)
+        {
+            return Ok(cached);
+        }
 
-        let role_filter = params.role.as_deref().map(|r| if r == "admin" { 0 } else { 1 });
+        let role_filter = params
+            .role
+            .as_deref()
+            .map(|r| if r == "admin" { 0 } else { 1 });
         let deleted_filter = params.deleted.unwrap_or(false);
 
         let mut query = "SELECT * FROM users WHERE 1=1".to_string();
         let mut count_query = "SELECT COUNT(*) FROM users WHERE 1=1".to_string();
-        
+
         if deleted_filter {
             query.push_str(" AND deleted_at IS NOT NULL");
             count_query.push_str(" AND deleted_at IS NOT NULL");
@@ -159,9 +177,9 @@ impl UserService {
             query.push_str(" AND deleted_at IS NULL");
             count_query.push_str(" AND deleted_at IS NULL");
         }
-        
+
         let mut bind_params = 1;
-        
+
         if role_filter.is_some() {
             query.push_str(&format!(" AND role = ${}", bind_params));
             count_query.push_str(&format!(" AND role = ${}", bind_params));
@@ -175,9 +193,17 @@ impl UserService {
         let total_count = count_q.fetch_one(&self.db).await?;
         let total_count = total_count.0 as u32;
 
-        let total_pages = if total_count == 0 { 1 } else { (total_count as f32 / params.get_per_page() as f32).ceil() as u32 };
-        
-        query.push_str(&format!(" ORDER BY created_at DESC LIMIT ${} OFFSET ${}", bind_params, bind_params + 1));
+        let total_pages = if total_count == 0 {
+            1
+        } else {
+            (total_count as f32 / params.get_per_page() as f32).ceil() as u32
+        };
+
+        query.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+            bind_params,
+            bind_params + 1
+        ));
 
         let mut users_q = sqlx::query_as::<_, User>(&query);
         if let Some(r) = role_filter {
@@ -197,12 +223,23 @@ impl UserService {
             per_page: params.get_per_page(),
             total_pages,
             total_count,
-            next_page: if params.get_page() < total_pages { Some(params.get_page() + 1) } else { None },
-            prev_page: if params.get_page() > 1 { Some(params.get_page() - 1) } else { None },
+            next_page: if params.get_page() < total_pages {
+                Some(params.get_page() + 1)
+            } else {
+                None
+            },
+            prev_page: if params.get_page() > 1 {
+                Some(params.get_page() - 1)
+            } else {
+                None
+            },
         };
 
         if let Ok(json_str) = serde_json::to_string(&response) {
-            let ttl = std::env::var("API_CACHE_TTL").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600);
+            let ttl = std::env::var("API_CACHE_TTL")
+                .unwrap_or_else(|_| "3600".to_string())
+                .parse()
+                .unwrap_or(3600);
             let _ = self.cache.set(&cache_key, &json_str, ttl).await;
         }
 
@@ -213,9 +250,10 @@ impl UserService {
         let cache_key = format!("user:profile:{}", user_id);
 
         if let Ok(Some(cached_str)) = self.cache.get(&cache_key).await
-            && let Ok(cached_user) = serde_json::from_str::<UserSerializer>(&cached_str) {
-                return Ok(cached_user);
-            }
+            && let Ok(cached_user) = serde_json::from_str::<UserSerializer>(&cached_str)
+        {
+            return Ok(cached_user);
+        }
 
         let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
             .bind(user_id)
@@ -226,7 +264,10 @@ impl UserService {
         let user_dto = UserSerializer::from(user);
 
         if let Ok(json_str) = serde_json::to_string(&user_dto) {
-            let ttl = std::env::var("API_CACHE_TTL").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600);
+            let ttl = std::env::var("API_CACHE_TTL")
+                .unwrap_or_else(|_| "3600".to_string())
+                .parse()
+                .unwrap_or(3600);
             let _ = self.cache.set(&cache_key, &json_str, ttl).await;
         }
 
@@ -240,7 +281,9 @@ impl UserService {
             .await?;
 
         if existing.is_some() {
-            return Err(AppError::Conflict("Email is already registered".to_string()));
+            return Err(AppError::Conflict(
+                "Email is already registered".to_string(),
+            ));
         }
 
         let salt = SaltString::generate(&mut OsRng);
@@ -255,7 +298,7 @@ impl UserService {
             INSERT INTO users (name, email, password_digest, role, status)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-            "#
+            "#,
         )
         .bind(&dto.name)
         .bind(&dto.email)
@@ -266,15 +309,19 @@ impl UserService {
         .await?;
 
         tx.commit().await?;
-        
+
         self.invalidate_users_index().await;
 
         Ok(UserSerializer::from(user))
     }
 
-    pub async fn update_user(&self, user_id: Uuid, dto: UserUpdateRequestDto) -> Result<UserSerializer, AppError> {
+    pub async fn update_user(
+        &self,
+        user_id: Uuid,
+        dto: UserUpdateRequestDto,
+    ) -> Result<UserSerializer, AppError> {
         let mut tx = self.db.begin().await?;
-        
+
         let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
@@ -288,10 +335,14 @@ impl UserService {
         let password_digest = if let Some(ref pwd) = dto.password {
             let salt = SaltString::generate(&mut OsRng);
             let argon2 = Argon2::default();
-            Some(argon2
-                .hash_password(pwd.as_bytes(), &salt)
-                .map_err(|e| AppError::Authentication(format!("Password hashing failure: {}", e)))?
-                .to_string())
+            Some(
+                argon2
+                    .hash_password(pwd.as_bytes(), &salt)
+                    .map_err(|e| {
+                        AppError::Authentication(format!("Password hashing failure: {}", e))
+                    })?
+                    .to_string(),
+            )
         } else {
             None
         };
@@ -311,7 +362,7 @@ impl UserService {
                 updated_at = NOW()
             WHERE id = $8
             RETURNING *
-            "#
+            "#,
         )
         .bind(&dto.name)
         .bind(&dto.email)
@@ -336,23 +387,30 @@ impl UserService {
     async fn invalidate_users_index(&self) {
         // In a real app we'd use Redis SCAN/DEL or versioning.
         // For simplicity we'll just increment a version key used in index cache keys.
-        let _ = self.cache.set("users_index_version", &Utc::now().timestamp().to_string(), 86400).await;
+        let _ = self
+            .cache
+            .set(
+                "users_index_version",
+                &Utc::now().timestamp().to_string(),
+                86400,
+            )
+            .await;
     }
 
     pub async fn soft_delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
         let mut tx = self.db.begin().await?;
-        
+
         let result = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1")
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
-            
+
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
         tx.commit().await?;
-        
+
         let cache_key = format!("user:profile:{}", user_id);
         let _ = self.cache.delete(&cache_key).await;
         self.invalidate_users_index().await;

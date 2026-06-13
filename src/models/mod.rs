@@ -1,5 +1,5 @@
-pub mod user;
 pub mod job;
+pub mod user;
 
-pub use user::*;
 pub use job::*;
+pub use user::*;

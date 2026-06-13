@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::{ToSchema, IntoParams};
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 /// Wrapper to support Rails `wrap_parameters` behavior.
@@ -21,12 +21,12 @@ where
     {
         let value = serde_json::Value::deserialize(deserializer)?;
 
-        if let Some(obj) = value.as_object() {
-            if let Some(user_val) = obj.get("user") {
-                // If the "user" key exists, parse its contents as T
-                let inner = T::deserialize(user_val.clone()).map_err(serde::de::Error::custom)?;
-                return Ok(UserPayloadWrapper::Wrapped { user: inner });
-            }
+        if let Some(obj) = value.as_object()
+            && let Some(user_val) = obj.get("user")
+        {
+            // If the "user" key exists, parse its contents as T
+            let inner = T::deserialize(user_val.clone()).map_err(serde::de::Error::custom)?;
+            return Ok(UserPayloadWrapper::Wrapped { user: inner });
         }
 
         // Fallback: parse the whole object as T
@@ -69,7 +69,7 @@ pub static ROLES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
     let paths = [
         "src/config/data/roles.yml",
         "config/data/roles.yml",
-        "roles.yml"
+        "roles.yml",
     ];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
@@ -79,7 +79,6 @@ pub static ROLES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert("admin".to_string(), 0);
     m.insert("user".to_string(), 1);
-    m.insert("moderator".to_string(), 2);
     m
 });
 
@@ -87,7 +86,7 @@ pub static STATUSES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
     let paths = [
         "src/config/data/statuses.yml",
         "config/data/statuses.yml",
-        "statuses.yml"
+        "statuses.yml",
     ];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
@@ -97,7 +96,6 @@ pub static STATUSES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
     let mut m = HashMap::new();
     m.insert("inactive".to_string(), 0);
     m.insert("active".to_string(), 1);
-    m.insert("suspend".to_string(), 2);
     m
 });
 
@@ -153,14 +151,15 @@ where
     }
 }
 
-fn deserialize_deleted_at<'de, D>(deserializer: D) -> Result<Option<Option<DateTime<Utc>>>, D::Error>
+fn deserialize_deleted_at<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<DateTime<Utc>>>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let opt = Option::<DateTime<Utc>>::deserialize(deserializer)?;
     Ok(Some(opt))
 }
-
 
 /// Core domain representation of a User in the database.
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -189,7 +188,7 @@ impl User {
     pub fn is_inactive(&self) -> bool {
         self.deleted_at.is_some() || self.status != 1
     }
-    
+
     pub fn is_admin(&self) -> bool {
         self.role == 0
     }
@@ -249,7 +248,6 @@ pub struct UserUpdateRequestDto {
     pub deleted_at: Option<Option<DateTime<Utc>>>,
 }
 
-
 /// Response schema for successful user authentication.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserLoginResponseDto {
@@ -281,7 +279,7 @@ impl PaginationParams {
     pub fn get_per_page(&self) -> u32 {
         self.per_page.unwrap_or(10).clamp(1, 100)
     }
-    
+
     pub fn offset(&self) -> u32 {
         (self.get_page() - 1) * self.get_per_page()
     }

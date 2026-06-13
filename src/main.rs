@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use rustom::app_state;
 use rustom::config;
-use rustom::infrastructure;
 use rustom::config::routes;
+use rustom::infrastructure;
 use rustom::services;
 
 #[tokio::main]

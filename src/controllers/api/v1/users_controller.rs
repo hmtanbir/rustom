@@ -1,17 +1,19 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::errors::AppError;
-use crate::middleware::AuthenticatedUser;
-use crate::models::{PaginationParams, UserCreateRequestDto, UserUpdateRequestDto, UserPayloadWrapper};
-use crate::policies::UserPolicy;
 use crate::extractors::AppJson;
+use crate::middleware::AuthenticatedUser;
+use crate::models::{
+    PaginationParams, UserCreateRequestDto, UserPayloadWrapper, UserUpdateRequestDto,
+};
+use crate::policies::UserPolicy;
 
 #[utoipa::path(
     get,
@@ -39,9 +41,12 @@ pub async fn index(
     }
 
     let paginated_res = state.user_service.get_users_paginated(params).await?;
-    
+
     Ok(Json(serde_json::to_value(paginated_res).map_err(|e| {
-        AppError::Unexpected(anyhow::anyhow!("Failed to serialize paginated response: {}", e))
+        AppError::Unexpected(anyhow::anyhow!(
+            "Failed to serialize paginated response: {}",
+            e
+        ))
     })?))
 }
 
@@ -133,7 +138,10 @@ pub async fn update_me(
         payload.deleted_at = None;
     }
 
-    let user_dto = state.user_service.update_user(claims.user_id, payload).await?;
+    let user_dto = state
+        .user_service
+        .update_user(claims.user_id, payload)
+        .await?;
 
     Ok(Json(json!({
         "status": StatusCode::OK.as_u16(),
@@ -163,17 +171,22 @@ pub async fn create(
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserCreateRequestDto>>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     if claims.role != 0 {
-        return Err(AppError::Authorization("Only admins can create users directly".to_string()));
+        return Err(AppError::Authorization(
+            "Only admins can create users directly".to_string(),
+        ));
     }
 
     let payload = payload_wrapper.into_inner();
     let user_dto = state.user_service.create_user(payload).await?;
 
-    Ok((StatusCode::CREATED, Json(json!({
-        "status": StatusCode::CREATED.as_u16(),
-        "message": "Successfully data created",
-        "data": user_dto
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "status": StatusCode::CREATED.as_u16(),
+            "message": "Successfully data created",
+            "data": user_dto
+        })),
+    ))
 }
 
 #[utoipa::path(

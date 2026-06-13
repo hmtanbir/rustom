@@ -28,10 +28,7 @@ impl SlackNotification {
             "text": text
         });
 
-        let response = client.post(webhook_url)
-            .json(&payload)
-            .send()
-            .await?;
+        let response = client.post(webhook_url).json(&payload).send().await?;
 
         if !response.status().is_success() {
             tracing::warn!("Failed to send Slack notification: {:?}", response.status());

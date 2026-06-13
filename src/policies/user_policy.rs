@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use crate::models::Claims;
+use uuid::Uuid;
 
 pub struct UserPolicy;
 
@@ -19,7 +19,7 @@ impl UserPolicy {
     pub fn destroy(current_user: &Claims) -> bool {
         Self::index(current_user)
     }
-    
+
     // In our implementation, admin = 0
     fn is_admin(current_user: &Claims) -> bool {
         current_user.role == 0

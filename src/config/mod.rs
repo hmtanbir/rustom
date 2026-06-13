@@ -35,8 +35,7 @@ impl AppConfig {
             let _ = dotenvy::dotenv();
         }
 
-        let mut builder = config::Config::builder()
-            .add_source(config::Environment::default());
+        let mut builder = config::Config::builder().add_source(config::Environment::default());
 
         // Construct database URL from individual POSTGRES_* env vars if available
         if let (Ok(user), Ok(pass), Ok(db), Ok(host), Ok(port)) = (
@@ -46,7 +45,10 @@ impl AppConfig {
             std::env::var("POSTGRES_HOST"),
             std::env::var("POSTGRES_PORT"),
         ) {
-            builder = builder.set_default("database_url", format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db))?;
+            builder = builder.set_default(
+                "database_url",
+                format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db),
+            )?;
         }
 
         // Construct Redis URL from individual REDIS_* env vars if available
@@ -56,7 +58,10 @@ impl AppConfig {
             std::env::var("REDIS_PORT"),
             std::env::var("REDIS_DB"),
         ) {
-            builder = builder.set_default("redis_url", format!("redis://:{}@{}:{}/{}", pass, host, port, db))?;
+            builder = builder.set_default(
+                "redis_url",
+                format!("redis://:{}@{}:{}/{}", pass, host, port, db),
+            )?;
         }
 
         // Construct RabbitMQ URL from individual RABBITMQ_* env vars if available
@@ -67,7 +72,10 @@ impl AppConfig {
             std::env::var("RABBITMQ_PORT"),
             std::env::var("RABBITMQ_VHOST"),
         ) {
-            builder = builder.set_default("rabbitmq_url", format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost))?;
+            builder = builder.set_default(
+                "rabbitmq_url",
+                format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost),
+            )?;
         }
 
         builder.build()?.try_deserialize()
