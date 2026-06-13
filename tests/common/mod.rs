@@ -40,15 +40,46 @@ pub async fn setup_app() -> (Router, PgPool) {
         std::env::set_var("API_PAYLOAD_ENCRYPTION_ENABLED", "false");
     }
     
+    // Load .env.development thread-safely
+    static INIT_DOTENV: std::sync::Once = std::sync::Once::new();
+    INIT_DOTENV.call_once(|| {
+        let _ = dotenvy::from_filename(".env.development");
+    });
+    
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let user = std::env::var("POSTGRES_USER").unwrap_or_else(|_| "postgres".to_string());
+        let pass = std::env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
+        let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
+        let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
+        let db_name = std::env::var("POSTGRES_TEST_DB").unwrap_or_else(|_| "rustom_test".to_string());
+        format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db_name)
+    });
+    
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| {
+        let pass = std::env::var("REDIS_PASSWORD").expect("REDIS_PASSWORD must be set in .env.development");
+        let host = std::env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port = std::env::var("REDIS_PORT").unwrap_or_else(|_| "6379".to_string());
+        let db = std::env::var("REDIS_DB").unwrap_or_else(|_| "0".to_string());
+        format!("redis://:{}@{}:{}/{}", pass, host, port, db)
+    });
+
+    let rabbitmq_url = std::env::var("RABBITMQ_URL").unwrap_or_else(|_| {
+        let user = std::env::var("RABBITMQ_USER").unwrap_or_else(|_| "guest".to_string());
+        let pass = std::env::var("RABBITMQ_PASSWORD").unwrap_or_else(|_| "guest".to_string());
+        let host = std::env::var("RABBITMQ_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let port = std::env::var("RABBITMQ_PORT").unwrap_or_else(|_| "5672".to_string());
+        let vhost = std::env::var("RABBITMQ_VHOST").unwrap_or_else(|_| "%2f".to_string());
+        format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost)
+    });
+    
     let config = AppConfig {
-        host: "127.0.0.1".to_string(),
-        port: 3000,
-        database_url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/rustom_test".to_string()),
-        redis_url: "redis://127.0.0.1:6379/0".to_string(),
-        rabbitmq_url: "amqp://127.0.0.1:5672/%2f".to_string(),
+        host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+        port: std::env::var("PORT").unwrap_or_else(|_| "3000".to_string()).parse().unwrap_or(3000),
+        database_url,
+        redis_url,
+        rabbitmq_url,
         jwt_secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret_for_tests_123456789".to_string()),
-        jwt_expiration_seconds: 3600,
+        jwt_expiration_seconds: std::env::var("JWT_EXPIRATION_SECONDS").unwrap_or_else(|_| "3600".to_string()).parse().unwrap_or(3600),
     };
 
     let db = rustom::infrastructure::init_db(&config)

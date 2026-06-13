@@ -35,7 +35,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: rustom_development
+          POSTGRES_DB: rustom_test
         ports:
           - 5432:5432
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
@@ -55,12 +55,12 @@ jobs:
 
       - name: Prepare test database
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rustom_development
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rustom_test
         run: |
           sqlx database create
           sqlx migrate run --source db/migrations
 
       - name: Run tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rustom_development
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/rustom_test
         run: cargo test
