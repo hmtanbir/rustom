@@ -63,7 +63,7 @@ If you prefer to run the Rust application natively on your machine, you must hav
    ```
 
 2. **Configure your `.env` file:**
-   Make sure the `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` point to your running instances.
+   Make sure the database, Redis, and RabbitMQ connection variables point to your running instances.
    ```env
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_db
    REDIS_URL=redis://localhost:6379/0
@@ -135,12 +135,6 @@ If you prefer to run the Rust application natively on your machine, you must hav
       sqlx migrate run --source db/seeds --ignore-missing
       ```
 
-   *(Alternative)* Using Docker Compose:
-   ```bash
-   docker compose exec -T postgres psql -U postgres -d rustom_db < db/seeds/20260612000001_seed_users.sql
-   ```
-
-
 4. **Run the application:**
    ```bash
    cargo run
@@ -185,7 +179,7 @@ redis-cli flushall
 Once the server is running, you can explore and test the API endpoints using the auto-generated Swagger UI interface.
 
 Navigate to:
-👉 **[http://localhost:8080/api-docs](http://localhost:8080/api-docs)**
+👉 **[http://localhost:3000/api-docs](http://localhost:3000/api-docs)**
 
 ## 🧪 Running Tests
 
