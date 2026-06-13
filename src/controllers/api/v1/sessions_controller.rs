@@ -9,6 +9,12 @@ use crate::extractors::AppJson;
 #[utoipa::path(
     post,
     path = "/api/v1/sessions",
+    request_body = UserLoginRequestDto,
+    responses(
+        (status = 200, description = "Successfully logged in", body = crate::serializers::user_serializer::SessionResponseDto),
+        (status = 401, description = "Invalid credentials / authentication failed", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 422, description = "Invalid input / fields missing", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
     tag = "Auth"
 )]
 

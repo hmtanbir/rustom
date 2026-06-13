@@ -13,8 +13,22 @@ use crate::models::{PaginationParams, UserCreateRequestDto, UserUpdateRequestDto
 use crate::policies::UserPolicy;
 use crate::extractors::AppJson;
 
-#[utoipa::path(get, path = "/api/v1/users", tag = "Users", security(("bearerAuth" = [])))]
-
+#[utoipa::path(
+    get,
+    path = "/api/v1/users",
+    tag = "Users",
+    params(
+        PaginationParams
+    ),
+    responses(
+        (status = 200, description = "Successfully fetched paginated list of users", body = crate::models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn index(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -31,6 +45,23 @@ pub async fn index(
     })?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = Uuid, Path, description = "User ID to fetch")
+    ),
+    responses(
+        (status = 200, description = "User fetched successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 404, description = "User not found", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn show(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -49,6 +80,18 @@ pub async fn show(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/me",
+    tag = "Users",
+    responses(
+        (status = 200, description = "Current user profile fetched successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn me(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -62,6 +105,20 @@ pub async fn me(
     })))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/users/me",
+    tag = "Users",
+    request_body = UserUpdateRequestDto,
+    responses(
+        (status = 200, description = "Current user profile updated successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 422, description = "Validation failed / Invalid input", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn update_me(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -73,6 +130,7 @@ pub async fn update_me(
     if claims.role != 0 {
         payload.role = None;
         payload.status = None;
+        payload.deleted_at = None;
     }
 
     let user_dto = state.user_service.update_user(claims.user_id, payload).await?;
@@ -84,6 +142,21 @@ pub async fn update_me(
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/users",
+    tag = "Users",
+    request_body = UserCreateRequestDto,
+    responses(
+        (status = 201, description = "User created successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 422, description = "Validation failed / Invalid input", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn create(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -103,6 +176,25 @@ pub async fn create(
     }))))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/api/v1/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = Uuid, Path, description = "User ID to update")
+    ),
+    request_body = UserUpdateRequestDto,
+    responses(
+        (status = 200, description = "User updated successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 404, description = "User not found", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 422, description = "Validation failed / Invalid input", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn update(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
@@ -119,6 +211,7 @@ pub async fn update(
     if claims.role != 0 {
         payload.role = None;
         payload.status = None;
+        payload.deleted_at = None;
     }
 
     let user_dto = state.user_service.update_user(id, payload).await?;
@@ -130,6 +223,23 @@ pub async fn update(
     })))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/{id}",
+    tag = "Users",
+    params(
+        ("id" = Uuid, Path, description = "User ID to delete")
+    ),
+    responses(
+        (status = 200, description = "User deleted successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 404, description = "User not found", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
 pub async fn destroy(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,

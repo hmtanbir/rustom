@@ -22,14 +22,17 @@ pub fn create_router(state: AppState) -> Router {
         CorsLayer::permissive()
     };
 
-    Router::new()
-        // Serve OpenAPI document & Swagger UI automatically at /api/docs
-        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", ApiDoc::openapi()))
+    let api_routes = Router::new()
         // Mount all API routes under /api
         .nest("/api", api_routes())
         // Apply Gateway Key validation middleware (Runs inner to encryption)
         .layer(axum::middleware::from_fn(verify_api_gateway_key))
-        .layer(axum::middleware::from_fn(payload_encryption))
+        .layer(axum::middleware::from_fn(payload_encryption));
+
+    Router::new()
+        // Serve OpenAPI document & Swagger UI automatically at /api-docs
+        .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(api_routes)
         // Add tracing/logging layer
         .layer(TraceLayer::new_for_http())
         .layer(cors)

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{ToSchema, IntoParams};
 use uuid::Uuid;
 
 /// Wrapper to support Rails `wrap_parameters` behavior.
@@ -153,6 +153,14 @@ where
     }
 }
 
+fn deserialize_deleted_at<'de, D>(deserializer: D) -> Result<Option<Option<DateTime<Utc>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<DateTime<Utc>>::deserialize(deserializer)?;
+    Ok(Some(opt))
+}
+
 
 /// Core domain representation of a User in the database.
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -237,6 +245,8 @@ pub struct UserUpdateRequestDto {
     pub role: Option<i32>, // Only processed if current user is admin
     #[serde(default, deserialize_with = "deserialize_status")]
     pub status: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_deleted_at")]
+    pub deleted_at: Option<Option<DateTime<Utc>>>,
 }
 
 
@@ -255,7 +265,7 @@ pub struct Claims {
 }
 
 /// Pagination parameters.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct PaginationParams {
     pub page: Option<u32>,
     pub per_page: Option<u32>,

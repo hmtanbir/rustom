@@ -275,11 +275,15 @@ impl UserService {
     pub async fn update_user(&self, user_id: Uuid, dto: UserUpdateRequestDto) -> Result<UserSerializer, AppError> {
         let mut tx = self.db.begin().await?;
         
-        let _existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
+        let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        if existing.deleted_at.is_some() && dto.deleted_at != Some(None) {
+            return Err(AppError::NotFound("User not found".to_string()));
+        }
 
         let password_digest = if let Some(ref pwd) = dto.password {
             let salt = SaltString::generate(&mut OsRng);
@@ -292,6 +296,9 @@ impl UserService {
             None
         };
 
+        let has_deleted_at = dto.deleted_at.is_some();
+        let deleted_at_val = dto.deleted_at.flatten();
+
         let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
@@ -300,8 +307,9 @@ impl UserService {
                 role = COALESCE($3, role),
                 status = COALESCE($4, status),
                 password_digest = COALESCE($5, password_digest),
+                deleted_at = CASE WHEN $6 THEN $7 ELSE deleted_at END,
                 updated_at = NOW()
-            WHERE id = $6
+            WHERE id = $8
             RETURNING *
             "#
         )
@@ -310,6 +318,8 @@ impl UserService {
         .bind(dto.role)
         .bind(dto.status)
         .bind(&password_digest)
+        .bind(has_deleted_at)
+        .bind(deleted_at_val)
         .bind(user_id)
         .fetch_one(&mut *tx)
         .await?;

@@ -43,3 +43,28 @@ impl From<User> for UserSerializer {
         }
     }
 }
+
+/// Wrapper response containing user details.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct UserResponseDto {
+    pub status: u16,
+    pub message: String,
+    pub data: UserSerializer,
+}
+
+/// Wrapper response containing session token details.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct SessionResponseDto {
+    pub status: u16,
+    pub message: String,
+    pub data: crate::models::UserLoginResponseDto,
+}
+
+/// Standard error response wrapper.
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct ErrorResponseDto {
+    pub status: u16,
+    pub message: String,
+    pub data: Option<serde_json::Value>,
+}
+

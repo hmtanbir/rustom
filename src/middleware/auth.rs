@@ -55,7 +55,7 @@ where
             &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
             &Validation::default(),
         )
-        .map_err(|_| AppError::Authentication("Invalid or expired user gateway token".to_string()))?;
+        .map_err(|_| AppError::Authentication("Invalid or expired user session token".to_string()))?;
 
         Ok(AuthenticatedUser(token_data.claims))
     }

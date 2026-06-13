@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Rustom API server running on http://{}", addr);
     tracing::info!(
-        "Swagger documentation available at http://{}/api/docs",
+        "Swagger documentation available at http://{}/api-docs",
         addr
     );
 

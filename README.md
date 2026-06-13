@@ -185,7 +185,7 @@ redis-cli flushall
 Once the server is running, you can explore and test the API endpoints using the auto-generated Swagger UI interface.
 
 Navigate to:
-👉 **[http://localhost:8080/api/docs](http://localhost:8080/api/docs)**
+👉 **[http://localhost:8080/api-docs](http://localhost:8080/api-docs)**
 
 ## 🧪 Running Tests
 

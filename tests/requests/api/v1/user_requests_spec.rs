@@ -372,3 +372,100 @@ async fn test_user_registration_with_moderator_role() {
     assert_eq!(created_user.role, 2);
 }
 
+#[tokio::test]
+async fn test_admin_can_restore_deleted_user() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+
+    // 1. Create a user
+    let user_id = uuid::Uuid::new_v4();
+    let email = format!("deleted_user_{}@example.com", user_id);
+    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
+    
+    sqlx::query!(
+        r#"
+        INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
+        VALUES ($1, 'Deleted User', $2, $3, 1, 1, NOW())
+        "#,
+        user_id, email, password_hash
+    ).execute(&db).await.unwrap();
+
+    // 2. Perform patch update as admin to set deleted_at to null
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_test_token(admin_id, 0); // 0 = Admin
+
+    let payload = json!({
+        "user": {
+            "deleted_at": null
+        }
+    });
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/users/{}", user_id))
+        .header("Content-Type", "application/json")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let mut app = app;
+    let response = app.call(req).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify it is null in database
+    let user_db = sqlx::query!(
+        "SELECT deleted_at FROM users WHERE id = $1",
+        user_id
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+
+    assert!(user_db.deleted_at.is_none());
+}
+
+#[tokio::test]
+async fn test_non_admin_cannot_update_deleted_at() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+
+    // Create target user
+    let user_id = uuid::Uuid::new_v4();
+    let email = format!("user_to_check_{}@example.com", user_id);
+    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
+    
+    sqlx::query!(
+        r#"
+        INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
+        VALUES ($1, 'Test User', $2, $3, 1, 1, NOW())
+        "#,
+        user_id, email, password_hash
+    ).execute(&db).await.unwrap();
+
+    // Perform patch update as self (non-admin, role=1) trying to update deleted_at
+    let token = generate_test_token(user_id, 1);
+
+    let payload = json!({
+        "user": {
+            "deleted_at": null
+        }
+    });
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/users/me")
+        .header("Content-Type", "application/json")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", token))
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+
+    let mut app = app;
+    let response = app.call(req).await.unwrap();
+
+    // Standard user gets NOT_FOUND because their deleted_at: null payload gets stripped and user is soft-deleted
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+

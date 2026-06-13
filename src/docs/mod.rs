@@ -9,12 +9,22 @@ use crate::models;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::controllers::api::v1::registration_controller::registration,
         crate::controllers::api::v1::sessions_controller::create,
-        crate::controllers::api::v1::users_controller::index
+        crate::controllers::api::v1::users_controller::index,
+        crate::controllers::api::v1::users_controller::show,
+        crate::controllers::api::v1::users_controller::me,
+        crate::controllers::api::v1::users_controller::update_me,
+        crate::controllers::api::v1::users_controller::create,
+        crate::controllers::api::v1::users_controller::update,
+        crate::controllers::api::v1::users_controller::destroy,
     ),
     components(
         schemas(
             crate::serializers::user_serializer::UserSerializer,
+            crate::serializers::user_serializer::UserResponseDto,
+            crate::serializers::user_serializer::SessionResponseDto,
+            crate::serializers::user_serializer::ErrorResponseDto,
             models::UserRegisterRequestDto,
             models::UserLoginRequestDto,
             models::UserLoginResponseDto,

@@ -7,6 +7,16 @@ use crate::models::{UserRegisterRequestDto, UserPayloadWrapper};
 use crate::services::SlackNotification;
 use crate::extractors::AppJson;
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/registration",
+    request_body = UserRegisterRequestDto,
+    responses(
+        (status = 201, description = "User successfully registered", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 422, description = "Invalid input / validation failed", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    tag = "Auth"
+)]
 pub async fn registration(
     State(state): State<AppState>,
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserRegisterRequestDto>>,
