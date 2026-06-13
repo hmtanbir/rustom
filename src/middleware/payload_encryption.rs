@@ -27,7 +27,7 @@ pub async fn payload_encryption(
     {
         // Extract the body
         let body = std::mem::replace(req.body_mut(), Body::empty());
-        let bytes = axum::body::to_bytes(body, usize::MAX).await.map_err(|_| StatusCode::BAD_REQUEST)?;
+        let bytes = axum::body::to_bytes(body, 2 * 1024 * 1024).await.map_err(|_| StatusCode::BAD_REQUEST)?;
 
         if !bytes.is_empty() {
             if let Ok(json_body) = serde_json::from_slice::<Value>(&bytes) {
@@ -69,7 +69,7 @@ pub async fn payload_encryption(
     if content_type.contains("application/json") {
         let (mut parts, body) = response.into_parts();
         
-        let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+        let bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
             Ok(b) => b,
             Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
         };

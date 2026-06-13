@@ -21,6 +21,7 @@ pub async fn init_rabbitmq(config: &AppConfig) -> Result<(Connection, Channel), 
     .map_err(AppError::Queue)?;
 
     let channel: Channel = conn.create_channel().await.map_err(AppError::Queue)?;
+    channel.confirm_select(lapin::options::ConfirmSelectOptions::default()).await.map_err(AppError::Queue)?;
 
     tracing::info!("Declaring queue: {}", JOBS_QUEUE);
     let _: lapin::Queue = channel

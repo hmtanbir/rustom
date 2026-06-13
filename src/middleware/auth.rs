@@ -43,15 +43,12 @@ where
 
         // If encryption is enabled, try to decrypt the token.
         // The user might be sending the entire encrypted response.
-        if EncryptionService::encryption_enabled() {
-            if let Ok(decrypted_string) = EncryptionService::decrypt(&token) {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&decrypted_string) {
-                    if let Some(t) = parsed.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
+        if EncryptionService::encryption_enabled()
+            && let Ok(decrypted_string) = EncryptionService::decrypt(&token)
+                && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&decrypted_string)
+                    && let Some(t) = parsed.get("data").and_then(|d| d.get("token")).and_then(|t| t.as_str()) {
                         token = t.to_string();
                     }
-                }
-            }
-        }
 
         let token_data = decode::<Claims>(
             &token,

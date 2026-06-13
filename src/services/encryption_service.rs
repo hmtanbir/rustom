@@ -13,26 +13,24 @@ impl EncryptionService {
         env::var("API_PAYLOAD_ENCRYPTION_ENABLED").unwrap_or_default() == "true"
     }
 
-    fn get_key() -> Key<Aes256Gcm> {
+    fn get_key() -> anyhow::Result<Key<Aes256Gcm>> {
         let key_str = env::var("API_ENCRYPTION_KEY").unwrap_or_default();
         let mut key_bytes = vec![0u8; 32];
 
         if key_str.len() == 64 && key_str.chars().all(|c| c.is_ascii_hexdigit()) {
             if let Ok(decoded) = hex::decode(&key_str) {
                 key_bytes.copy_from_slice(&decoded);
+                Ok(*Key::<Aes256Gcm>::from_slice(&key_bytes))
+            } else {
+                Err(anyhow::anyhow!("API_ENCRYPTION_KEY must be a valid 64-character hex string"))
             }
         } else {
-            // Pad or truncate to 32 bytes
-            let bytes = key_str.as_bytes();
-            let copy_len = bytes.len().min(32);
-            key_bytes[..copy_len].copy_from_slice(&bytes[..copy_len]);
+            Err(anyhow::anyhow!("API_ENCRYPTION_KEY must be exactly 64 characters of hex"))
         }
-
-        *Key::<Aes256Gcm>::from_slice(&key_bytes)
     }
 
     pub fn encrypt(plain_text: &str) -> anyhow::Result<String> {
-        let key = Self::get_key();
+        let key = Self::get_key()?;
         let cipher = Aes256Gcm::new(&key);
 
         let mut nonce_bytes = [0u8; 12];
@@ -62,7 +60,7 @@ impl EncryptionService {
         let nonce_bytes = &decoded[0..12];
         let ciphertext_with_tag = &decoded[12..];
 
-        let key = Self::get_key();
+        let key = Self::get_key()?;
         let cipher = Aes256Gcm::new(&key);
         let nonce = Nonce::from_slice(nonce_bytes);
 

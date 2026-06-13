@@ -19,13 +19,13 @@ pub async fn verify_api_gateway_key(
         return Ok(next.run(req).await);
     }
 
-    if let Some(provided_key) = req.headers().get("x-api-gateway-key") {
-        if let Ok(key_str) = provided_key.to_str() {
-            if key_str == expected_key {
+    if let Some(provided_key) = req.headers().get("x-api-gateway-key")
+        && let Ok(key_str) = provided_key.to_str() {
+            use subtle::ConstantTimeEq;
+            if key_str.as_bytes().ct_eq(expected_key.as_bytes()).into() {
                 return Ok(next.run(req).await);
             }
         }
-    }
 
     Err(AppError::Authorization(error_message))
 }

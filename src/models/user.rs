@@ -5,11 +5,34 @@ use uuid::Uuid;
 
 /// Wrapper to support Rails `wrap_parameters` behavior.
 /// This seamlessly accepts both `{"user": {...}}` and unwrapped payloads.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Debug)]
 pub enum UserPayloadWrapper<T> {
     Wrapped { user: T },
     Unwrapped(T),
+}
+
+impl<'de, T> serde::Deserialize<'de> for UserPayloadWrapper<T>
+where
+    T: serde::Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        if let Some(obj) = value.as_object() {
+            if let Some(user_val) = obj.get("user") {
+                // If the "user" key exists, parse its contents as T
+                let inner = T::deserialize(user_val.clone()).map_err(serde::de::Error::custom)?;
+                return Ok(UserPayloadWrapper::Wrapped { user: inner });
+            }
+        }
+
+        // Fallback: parse the whole object as T
+        let inner = T::deserialize(value).map_err(serde::de::Error::custom)?;
+        Ok(UserPayloadWrapper::Unwrapped(inner))
+    }
 }
 
 impl<T> UserPayloadWrapper<T> {
@@ -22,6 +45,61 @@ impl<T> UserPayloadWrapper<T> {
 }
 
 use serde::Deserializer;
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
+fn parse_yaml_map(yaml_str: &str) -> HashMap<String, i32> {
+    let mut map = HashMap::new();
+    for line in yaml_str.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, val)) = line.split_once(':') {
+            let key = key.trim().to_lowercase();
+            if let Ok(parsed_val) = val.trim().parse::<i32>() {
+                map.insert(key, parsed_val);
+            }
+        }
+    }
+    map
+}
+
+pub static ROLES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
+    let paths = [
+        "src/config/data/roles.yml",
+        "config/data/roles.yml",
+        "roles.yml"
+    ];
+    for path in &paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return parse_yaml_map(&content);
+        }
+    }
+    let mut m = HashMap::new();
+    m.insert("admin".to_string(), 0);
+    m.insert("user".to_string(), 1);
+    m.insert("moderator".to_string(), 2);
+    m
+});
+
+pub static STATUSES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
+    let paths = [
+        "src/config/data/statuses.yml",
+        "config/data/statuses.yml",
+        "statuses.yml"
+    ];
+    for path in &paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return parse_yaml_map(&content);
+        }
+    }
+    let mut m = HashMap::new();
+    m.insert("inactive".to_string(), 0);
+    m.insert("active".to_string(), 1);
+    m.insert("suspend".to_string(), 2);
+    m
+});
 
 fn deserialize_role<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
 where
@@ -36,11 +114,14 @@ where
 
     let opt = Option::<RoleInput>::deserialize(deserializer)?;
     match opt {
-        Some(RoleInput::String(s)) => match s.to_lowercase().as_str() {
-            "admin" => Ok(Some(0)),
-            "user" => Ok(Some(1)),
-            _ => Err(serde::de::Error::custom(format!("Invalid role: {}", s))),
-        },
+        Some(RoleInput::String(s)) => {
+            let key = s.to_lowercase();
+            if let Some(&val) = ROLES_MAP.get(&key) {
+                Ok(Some(val))
+            } else {
+                Err(serde::de::Error::custom(format!("Invalid role: {}", s)))
+            }
+        }
         Some(RoleInput::Int(i)) => Ok(Some(i)),
         None => Ok(None),
     }
@@ -59,11 +140,14 @@ where
 
     let opt = Option::<StatusInput>::deserialize(deserializer)?;
     match opt {
-        Some(StatusInput::String(s)) => match s.to_lowercase().as_str() {
-            "inactive" => Ok(Some(0)),
-            "active" => Ok(Some(1)),
-            _ => Err(serde::de::Error::custom(format!("Invalid status: {}", s))),
-        },
+        Some(StatusInput::String(s)) => {
+            let key = s.to_lowercase();
+            if let Some(&val) = STATUSES_MAP.get(&key) {
+                Ok(Some(val))
+            } else {
+                Err(serde::de::Error::custom(format!("Invalid status: {}", s)))
+            }
+        }
         Some(StatusInput::Int(i)) => Ok(Some(i)),
         None => Ok(None),
     }
@@ -95,7 +179,7 @@ pub struct User {
 
 impl User {
     pub fn is_inactive(&self) -> bool {
-        self.deleted_at.is_some() || self.status == 0
+        self.deleted_at.is_some() || self.status != 1
     }
     
     pub fn is_admin(&self) -> bool {
@@ -113,6 +197,10 @@ pub struct UserRegisterRequestDto {
     pub email: String,
     #[schema(example = "SecretPassword123")]
     pub password: String,
+    #[serde(default, deserialize_with = "deserialize_role")]
+    pub role: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_status")]
+    pub status: Option<i32>,
 }
 
 /// Request schema for user login authentication.
@@ -144,6 +232,7 @@ pub struct UserCreateRequestDto {
 pub struct UserUpdateRequestDto {
     pub name: Option<String>,
     pub email: Option<String>,
+    pub password: Option<String>,
     #[serde(default, deserialize_with = "deserialize_role")]
     pub role: Option<i32>, // Only processed if current user is admin
     #[serde(default, deserialize_with = "deserialize_status")]

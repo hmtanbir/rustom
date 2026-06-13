@@ -57,7 +57,7 @@ impl IntoResponse for AppError {
             AppError::Authorization(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::InvalidInput(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()), // Matching Rails unprocessable_content
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            AppError::Conflict(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::Unexpected(err) => {
                 tracing::error!("Unexpected application error: {:?}", err);
                 let msg = err.to_string();

@@ -1,2 +1,4 @@
-0: admin
-1: user
+# config/data/roles.yml
+admin: 0
+user: 1
+moderator: 2

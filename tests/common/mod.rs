@@ -35,15 +35,14 @@ impl QueueService for MockQueue {
 
 pub async fn setup_app() -> (Router, PgPool) {
     
-    // Disable encryption for tests to verify plain JSON outputs
-    unsafe {
-        std::env::set_var("API_PAYLOAD_ENCRYPTION_ENABLED", "false");
-    }
+    // Note: To disable encryption for tests, set API_PAYLOAD_ENCRYPTION_ENABLED=false
+    // in the environment running the tests (e.g. in .env.test or CI config).
+    // Mutating std::env::set_var here is unsafe in Rust 2024 and causes data races.
     
-    // Load .env.development thread-safely
+    // Load .env.test thread-safely
     static INIT_DOTENV: std::sync::Once = std::sync::Once::new();
     INIT_DOTENV.call_once(|| {
-        let _ = dotenvy::from_filename(".env.development");
+        let _ = dotenvy::from_filename(".env.test");
     });
     
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
@@ -51,7 +50,7 @@ pub async fn setup_app() -> (Router, PgPool) {
         let pass = std::env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
         let host = std::env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string());
         let port = std::env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string());
-        let db_name = std::env::var("POSTGRES_TEST_DB").unwrap_or_else(|_| "rustom_test".to_string());
+        let db_name = std::env::var("POSTGRES_DB").unwrap_or_else(|_| "rustom_test".to_string());
         format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db_name)
     });
     
@@ -86,11 +85,22 @@ pub async fn setup_app() -> (Router, PgPool) {
         .await
         .expect("Failed to initialize test DB and run migrations");
         
-    // Clean all tables before the test runs to ensure a clean state
-    sqlx::query!("TRUNCATE TABLE users CASCADE;")
-        .execute(&db)
-        .await
-        .expect("Failed to truncate tables");
+    // Clean all tables exactly once at the start of the test suite run to prevent race conditions
+    static DB_CLEANED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if DB_CLEANED
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    {
+        sqlx::query!("TRUNCATE TABLE users CASCADE;")
+            .execute(&db)
+            .await
+            .expect("Failed to truncate tables");
+    }
     
     let cache_service = Arc::new(MockCache) as DynCacheService;
     let queue_publisher = Arc::new(MockQueue) as DynQueueService;

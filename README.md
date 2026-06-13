@@ -51,7 +51,7 @@ The easiest way to run the application locally is using Docker Compose. This spi
    docker compose up --build
    ```
 
-The API will be available at `http://localhost:8080`.
+The API will be available at `http://localhost:3000`.
 
 ## 💻 Running Natively (Without Docker)
 
@@ -84,14 +84,16 @@ If you prefer to run the Rust application natively on your machine, you must hav
    sqlx migrate run --source db/migrations
    ```
 
+
+
    #### 🌐 Target Other Environments (Test, Production, etc.)
    Since `sqlx-cli` reads from `.env` by default and does not natively parse `APP_ENV` to switch files, you need to explicitly supply the database URL for other environments. You can do this by setting the `DATABASE_URL` inline or using the `-D` flag:
 
    **For Test Environment:**
    ```bash
    # Option 1: Inline environment variable
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx database create
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_test sqlx migrate run --source db/migrations
+   sqlx database create
+   sqlx migrate run --source db/migrations
    
    # Option 2: Using the DATABASE_URL flag (-D)
    sqlx database create -D postgres://postgres:postgres@localhost:5432/rustom_test
@@ -100,8 +102,8 @@ If you prefer to run the Rust application natively on your machine, you must hav
 
    **For Production Environment:**
    ```bash
-   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx database create
-   DATABASE_URL=postgres://postgres:secure_password@prod_postgres_host:5432/rustom_production sqlx migrate run --source db/migrations
+   sqlx database create
+   sqlx migrate run --source db/migrations
    ```
 
    
@@ -193,6 +195,15 @@ To execute the unit and integration tests:
 cargo test
 ```
 
+## 🧹 Linting and Formatting
+
+To check for and automatically apply Clippy fixes:
+
+```bash
+cargo clippy --fix --lib -p rustom --allow-dirty
+```
+
 ## 📜 License
 
 This project is open-source and available under the [MIT License](LICENSE).
+

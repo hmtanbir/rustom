@@ -12,7 +12,15 @@ use crate::middleware::{verify_api_gateway_key, payload_encryption};
 
 /// Build the Axum Router configuring routes, CORS, logging, and Swagger UI.
 pub fn create_router(state: AppState) -> Router {
-    let cors = CorsLayer::permissive();
+    let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+    let cors = if app_env == "production" {
+        CorsLayer::new()
+            .allow_origin(tower_http::cors::Any) // In a real app, specify actual origins here like `["https://example.com".parse().unwrap()]`
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+    } else {
+        CorsLayer::permissive()
+    };
 
     Router::new()
         // Serve OpenAPI document & Swagger UI automatically at /api/docs

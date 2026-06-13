@@ -40,7 +40,7 @@ impl QueueService for RabbitMQQueueService {
             AppError::Unexpected(anyhow::anyhow!("Failed to serialize job payload: {}", e))
         })?;
 
-        self.channel
+        let confirm = self.channel
             .basic_publish(
                 "", // Default exchange
                 JOBS_QUEUE,
@@ -49,7 +49,15 @@ impl QueueService for RabbitMQQueueService {
                 BasicProperties::default(),
             )
             .await
+            .map_err(AppError::Queue)?
+            .await
             .map_err(AppError::Queue)?;
+
+        if !confirm.is_ack() {
+            return Err(AppError::Queue(lapin::Error::IOError(std::sync::Arc::new(std::io::Error::other(
+                "Message was not acknowledged by RabbitMQ broker",
+            )))));
+        }
 
         tracing::info!("Job {} published successfully.", job.job_id);
         Ok(())
@@ -118,13 +126,15 @@ pub fn start_queue_consumer(channel: Channel) {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to process job {}: {:?}. Requeuing...", payload.job_id, e);
-                    // Requeue the job on error
+                    tracing::error!("Failed to process job {}: {:?}. Rejecting...", payload.job_id, e);
+                    // Reject the message without requeuing to prevent poison pill loops.
+                    // In a production system, a Dead Letter Exchange (DLX) should be configured
+                    // on the queue to capture these failed messages.
                     if let Err(re) = delivery
-                        .reject(BasicRejectOptions { requeue: true })
+                        .reject(BasicRejectOptions { requeue: false })
                         .await
                     {
-                        tracing::error!("Failed to reject/requeue message: {:?}", re);
+                        tracing::error!("Failed to reject message: {:?}", re);
                     }
                 }
             }
@@ -139,8 +149,8 @@ async fn process_job(job: &JobPayload) -> Result<(), AppError> {
 
     match job.job_type.as_str() {
         "email" => {
-            let email_to = job.payload.get("to").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("unknown");
-            let email_body = job.payload.get("body").and_then(|v: &serde_json::Value| v.as_str()).unwrap_or("");
+            let email_to = job.payload.get("to").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let email_body = job.payload.get("body").and_then(|v| v.as_str()).unwrap_or("");
             tracing::info!(
                 "Sending email background job -> TO: {}, BODY: {}",
                 email_to,

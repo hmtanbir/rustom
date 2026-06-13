@@ -1,0 +1,5 @@
+# config/data/statuses.yml
+inactive: 0
+active: 1
+suspended: 2
+deleted: 3

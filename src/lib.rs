@@ -13,3 +13,4 @@ pub mod policies;
 
 pub mod serializers;
 pub mod services;
+pub mod extractors;

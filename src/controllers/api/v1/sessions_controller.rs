@@ -4,10 +4,17 @@ use serde_json::{json, Value};
 use crate::app_state::AppState;
 use crate::errors::AppError;
 use crate::models::{UserLoginRequestDto, UserPayloadWrapper};
+use crate::extractors::AppJson;
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions",
+    tag = "Auth"
+)]
 
 pub async fn create(
     State(state): State<AppState>,
-    Json(payload_wrapper): Json<UserPayloadWrapper<UserLoginRequestDto>>,
+    AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserLoginRequestDto>>,
 ) -> Result<Json<Value>, AppError> {
     let payload = payload_wrapper.into_inner();
 

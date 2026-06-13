@@ -26,7 +26,7 @@ impl AppConfig {
     pub fn from_env() -> Result<Self, config::ConfigError> {
         // Determine application environment (default to "development")
         let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".into());
-        println!("Loading configuration for environment: {}", app_env);
+        eprintln!("Loading configuration for environment: {}", app_env);
 
         // Try to load variables from environment-specific .env file
         let env_file = format!(".env.{}", app_env);

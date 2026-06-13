@@ -22,5 +22,14 @@ pub async fn init_db(config: &AppConfig) -> Result<PgPool, AppError> {
         .map_err(|e| AppError::Unexpected(anyhow::anyhow!("Migration failed: {}", e)))?;
 
     tracing::info!("PostgreSQL database is ready.");
+
+    // Seed data if the table is empty
+    tracing::info!("Checking if seed data is needed...");
+    let seed_sql = include_str!("../../db/seeds/20260612000001_seed_users.sql");
+    let _ = sqlx::query(seed_sql)
+        .execute(&pool)
+        .await
+        .map_err(|e| tracing::warn!("Failed to execute seed data: {}", e));
+
     Ok(pool)
 }

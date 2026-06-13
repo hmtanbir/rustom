@@ -8,7 +8,10 @@ use crate::models;
 /// Master OpenAPI structure aggregating all handlers, schemas, and security rules.
 #[derive(OpenApi)]
 #[openapi(
-    paths(),
+    paths(
+        crate::controllers::api::v1::sessions_controller::create,
+        crate::controllers::api::v1::users_controller::index
+    ),
     components(
         schemas(
             crate::serializers::user_serializer::UserSerializer,

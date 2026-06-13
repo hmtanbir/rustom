@@ -5,10 +5,11 @@ use crate::app_state::AppState;
 use crate::errors::AppError;
 use crate::models::{UserRegisterRequestDto, UserPayloadWrapper};
 use crate::services::SlackNotification;
+use crate::extractors::AppJson;
 
 pub async fn registration(
     State(state): State<AppState>,
-    Json(payload_wrapper): Json<UserPayloadWrapper<UserRegisterRequestDto>>,
+    AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserRegisterRequestDto>>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let payload = payload_wrapper.into_inner();
 
@@ -18,9 +19,11 @@ pub async fn registration(
 
     let user_dto = state.user_service.register(payload).await?;
 
-    // Send Slack notification for user registration
+    // Send Slack notification for user registration asynchronously
     let slack_message = format!("New user registered: {} ({})", user_dto.name, user_dto.email);
-    let _ = SlackNotification::notify_registration(&slack_message).await;
+    tokio::spawn(async move {
+        let _ = SlackNotification::notify_registration(&slack_message).await;
+    });
 
     Ok((
         StatusCode::CREATED,
