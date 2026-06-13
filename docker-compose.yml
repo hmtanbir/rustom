@@ -4,16 +4,12 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: rustom_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: rustom_db
-    ports:
-      - "5432:5432"
+    env_file:
+      - .env.production
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d rustom_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,12 +17,13 @@ services:
   redis:
     image: redis:alpine
     container_name: rustom_redis
-    ports:
-      - "6379:6379"
+    command: ["sh", "-c", "redis-server $${REDIS_PASSWORD:+--requirepass \"$$REDIS_PASSWORD\"}"]
+    env_file:
+      - .env.production
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -z \"$$REDIS_PASSWORD\" ]; then redis-cli ping; else redis-cli -a \"$$REDIS_PASSWORD\" ping; fi"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -37,6 +34,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    env_file:
+      - .env.production
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -46,21 +45,19 @@ services:
       retries: 5
 
   api:
+    image: hmtanbir/rustom:1.0.0
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: rustom_api
+    container_name: rustom-api
     ports:
-      - "8080:8080"
+      - "${PORT}:3000"
+    env_file:
+      - .env.production
     environment:
-      - PORT=8080
-      - HOST=0.0.0.0
-      - RUST_LOG=info,rustom=debug,tower_http=debug
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/rustom_db
-      - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/%2f
-      - JWT_SECRET=super_secret_jwt_key_that_is_long_enough_to_be_secure_12345
-      - JWT_EXPIRATION_SECONDS=3600
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
     depends_on:
       postgres:
         condition: service_healthy

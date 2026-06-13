@@ -6,6 +6,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2: Builder
 FROM lukemathwalker/cargo-chef:latest-rust-alpine AS builder
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static
 WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies - this layer will be cached unless dependencies change
@@ -23,10 +24,9 @@ RUN apk add --no-cache \
 
 # Copy build artifact from builder
 COPY --from=builder /app/target/release/rustom /app/rustom
-# Copy environment file as fallback if not using container environment variables
-COPY --from=builder /app/.env /app/.env
 
-EXPOSE 8080
+
+EXPOSE 3000
 ENV TZ=Etc/UTC
 
 CMD ["/app/rustom"]

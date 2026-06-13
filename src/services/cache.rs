@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use redis::AsyncCommands;
 
-use std::sync::Arc;
-use crate::domain::AppError;
+use crate::errors::AppError;
 use crate::infrastructure::RedisPool;
+use std::sync::Arc;
 
 /// Generic caching service trait for storage operations.
 #[async_trait]
@@ -35,19 +35,26 @@ impl RedisCacheService {
 impl CacheService for RedisCacheService {
     async fn get(&self, key: &str) -> Result<Option<String>, AppError> {
         let mut conn = self.pool.get().await.map_err(|e| {
-            AppError::Cache(format!("Failed to acquire connection from Redis pool: {}", e))
+            AppError::Cache(format!(
+                "Failed to acquire connection from Redis pool: {}",
+                e
+            ))
         })?;
 
-        let value_str: Option<String> = conn.get(key).await.map_err(|e| {
-            AppError::Cache(format!("Redis GET command failed: {}", e))
-        })?;
+        let value_str: Option<String> = conn
+            .get(key)
+            .await
+            .map_err(|e| AppError::Cache(format!("Redis GET command failed: {}", e)))?;
 
         Ok(value_str)
     }
 
     async fn set(&self, key: &str, value: &str, ttl_seconds: u64) -> Result<(), AppError> {
         let mut conn = self.pool.get().await.map_err(|e| {
-            AppError::Cache(format!("Failed to acquire connection from Redis pool: {}", e))
+            AppError::Cache(format!(
+                "Failed to acquire connection from Redis pool: {}",
+                e
+            ))
         })?;
 
         let _: () = conn
@@ -60,7 +67,10 @@ impl CacheService for RedisCacheService {
 
     async fn delete(&self, key: &str) -> Result<(), AppError> {
         let mut conn = self.pool.get().await.map_err(|e| {
-            AppError::Cache(format!("Failed to acquire connection from Redis pool: {}", e))
+            AppError::Cache(format!(
+                "Failed to acquire connection from Redis pool: {}",
+                e
+            ))
         })?;
 
         let _: () = conn
