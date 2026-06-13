@@ -62,13 +62,8 @@ If you prefer to run the Rust application natively on your machine, you must hav
    docker compose up postgres redis rabbitmq -d
    ```
 
-2. **Configure your `.env` file:**
+2. **Configure your `.env` and `.env.test` and `.env.production` files:**
    Make sure the database, Redis, and RabbitMQ connection variables point to your running instances.
-   ```env
-   DATABASE_URL=postgres://postgres:postgres@localhost:5432/rustom_db
-   REDIS_URL=redis://localhost:6379/0
-   RABBITMQ_URL=amqp://guest:guest@localhost:5672/%2f
-   ```
 
 3. **Create the Database & Run Migrations:**
    You must create the database before running the application natively. You can use `sqlx-cli` to handle this.
