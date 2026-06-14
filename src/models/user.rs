@@ -257,8 +257,9 @@ pub struct UserLoginResponseDto {
 /// JWT Token claim layout.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub user_id: Uuid, // Changed from sub to match Rails (user_id)
+    pub user_id: Uuid,
     pub role: i32,
+    pub status: i32,
     pub exp: u64,
 }
 
