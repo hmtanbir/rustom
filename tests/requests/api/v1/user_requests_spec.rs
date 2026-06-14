@@ -21,6 +21,7 @@ fn generate_test_token(user_id: uuid::Uuid, role: i32) -> String {
     let claims = Claims {
         user_id,
         role,
+        status: 1,
         exp: expiration as u64,
     };
 

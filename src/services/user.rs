@@ -121,6 +121,7 @@ impl UserService {
         let claims = Claims {
             user_id: user.id,
             role: user.role,
+            status: user.status,
             exp,
         };
 
