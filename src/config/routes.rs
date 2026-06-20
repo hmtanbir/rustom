@@ -15,10 +15,10 @@ pub fn create_router(state: AppState) -> Router {
         let mut allowed_origins = Vec::new();
         for domain in state.config.domain_name.split(',') {
             let trimmed = domain.trim();
-            if !trimmed.is_empty() {
-                if let Ok(origin) = trimmed.parse::<axum::http::HeaderValue>() {
-                    allowed_origins.push(origin);
-                }
+            if !trimmed.is_empty()
+                && let Ok(origin) = trimmed.parse::<axum::http::HeaderValue>()
+            {
+                allowed_origins.push(origin);
             }
         }
         CorsLayer::new()
@@ -39,7 +39,8 @@ pub fn create_router(state: AppState) -> Router {
     let mut router = Router::new();
     // Serve OpenAPI document & Swagger UI automatically at /api-docs ONLY in non-production environments
     if app_env != "production" {
-        router = router.merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
+        router = router
+            .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
     }
 
     router

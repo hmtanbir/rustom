@@ -108,7 +108,10 @@ where
             if ROLES_MAP.values().any(|&v| v == i) {
                 Ok(Some(i))
             } else {
-                Err(serde::de::Error::custom(format!("Invalid role integer value: {}", i)))
+                Err(serde::de::Error::custom(format!(
+                    "Invalid role integer value: {}",
+                    i
+                )))
             }
         }
         None => Ok(None),
@@ -140,7 +143,10 @@ where
             if STATUSES_MAP.values().any(|&v| v == i) {
                 Ok(Some(i))
             } else {
-                Err(serde::de::Error::custom(format!("Invalid status integer value: {}", i)))
+                Err(serde::de::Error::custom(format!(
+                    "Invalid status integer value: {}",
+                    i
+                )))
             }
         }
         None => Ok(None),

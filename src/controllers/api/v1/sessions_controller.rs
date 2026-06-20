@@ -2,6 +2,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use serde_json::{Value, json};
 
 use crate::app_state::AppState;
+use crate::config::API_RATE_LIMIT;
 use crate::errors::AppError;
 use crate::extractors::AppJson;
 use crate::models::{UserLoginRequestDto, UserPayloadWrapper};
@@ -30,14 +31,18 @@ pub async fn create(
         ));
     }
 
-    // Rate limiting: 5 requests per 60 seconds per email identifier
+    // Rate limiting: API_RATE_LIMIT requests per 60 seconds per email identifier
     let rate_limit_key = format!("rate_limit:login:{}", payload.email);
-    if let Ok(count) = state.user_service.get_cache().incr_with_ttl(&rate_limit_key, 60).await {
-        if count > 5 {
-            return Err(AppError::Authorization(
-                "Too many login attempts. Please try again in a minute.".to_string(),
-            ));
-        }
+    if let Ok(count) = state
+        .user_service
+        .get_cache()
+        .incr_with_ttl(&rate_limit_key, 60)
+        .await
+        && count > *API_RATE_LIMIT
+    {
+        return Err(AppError::Authorization(
+            "Too many login attempts. Please try again in a minute.".to_string(),
+        ));
     }
 
     // Attempt login via service

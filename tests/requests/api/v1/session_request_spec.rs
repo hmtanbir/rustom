@@ -36,7 +36,6 @@ async fn test_successful_login() {
         "password": "password"
     });
 
-
     let req = Request::builder()
         .method("POST")
         .uri("/api/v1/sessions")

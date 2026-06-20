@@ -4,18 +4,16 @@ use std::sync::LazyLock;
 
 use crate::errors::AppError;
 
-static API_GATEWAY_KEY_VAL: LazyLock<String> = LazyLock::new(|| {
-    env::var("API_GATEWAY_KEY").unwrap_or_default()
-});
+static API_GATEWAY_KEY_VAL: LazyLock<String> =
+    LazyLock::new(|| env::var("API_GATEWAY_KEY").unwrap_or_default());
 
 static API_GATEWAY_ERROR_MESSAGE_VAL: LazyLock<String> = LazyLock::new(|| {
     env::var("API_GATEWAY_ERROR_MESSAGE")
         .unwrap_or_else(|_| "Invalid User API Gateway Key".to_string())
 });
 
-static APP_ENV: LazyLock<String> = LazyLock::new(|| {
-    env::var("APP_ENV").unwrap_or_else(|_| "development".to_string())
-});
+static APP_ENV: LazyLock<String> =
+    LazyLock::new(|| env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()));
 
 pub async fn verify_api_gateway_key(req: Request, next: Next) -> Result<Response, AppError> {
     let expected_key = &*API_GATEWAY_KEY_VAL;
@@ -23,9 +21,7 @@ pub async fn verify_api_gateway_key(req: Request, next: Next) -> Result<Response
 
     if expected_key.is_empty() {
         if *APP_ENV == "production" {
-            return Err(AppError::Authorization(
-                "API Gateway Key is unset in production environment".to_string(),
-            ));
+            return Err(AppError::Authorization(error_message.clone()));
         }
         return Ok(next.run(req).await);
     }
