@@ -34,7 +34,9 @@ impl UserService {
 
     fn validate_password(&self, password: &str) -> Result<(), AppError> {
         if password.len() < 8 {
-            return Err(AppError::InvalidInput("Password must be at least 8 characters long".to_string()));
+            return Err(AppError::InvalidInput(
+                "Password must be at least 8 characters long".to_string(),
+            ));
         }
         let has_uppercase = password.chars().any(|c| c.is_uppercase());
         let has_lowercase = password.chars().any(|c| c.is_lowercase());
@@ -358,17 +360,19 @@ impl UserService {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
-        if let Some(ref new_email) = dto.email {
-            if new_email != &existing.email {
-                let email_exists = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL")
+        if let Some(ref new_email) = dto.email
+            && new_email != &existing.email
+        {
+            let email_exists = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL")
                     .bind(new_email)
                     .bind(user_id)
                     .fetch_optional(&mut *tx)
                     .await?;
 
-                if email_exists.is_some() {
-                    return Err(AppError::Conflict("Email is already registered by another user".to_string()));
-                }
+            if email_exists.is_some() {
+                return Err(AppError::Conflict(
+                    "Email is already registered by another user".to_string(),
+                ));
             }
         }
 
@@ -439,13 +443,16 @@ impl UserService {
     pub async fn soft_delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
         let mut tx = self.db.begin().await?;
 
-        let result = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
+        let result =
+            sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("User not found or already deleted".to_string()));
+            return Err(AppError::NotFound(
+                "User not found or already deleted".to_string(),
+            ));
         }
 
         tx.commit().await?;

@@ -65,21 +65,29 @@ where
         })?;
 
         // Get state extension to verify user against database
-        let Extension(state) = Extension::<crate::app_state::AppState>::from_request_parts(parts, state)
-            .await
-            .map_err(|_| {
-                AppError::Unexpected(anyhow::anyhow!(
-                    "AppState was not injected via Router extensions"
-                ))
-            })?;
+        let Extension(state) =
+            Extension::<crate::app_state::AppState>::from_request_parts(parts, state)
+                .await
+                .map_err(|_| {
+                    AppError::Unexpected(anyhow::anyhow!(
+                        "AppState was not injected via Router extensions"
+                    ))
+                })?;
 
         // Fetch the user and verify status
-        let user = state.user_service.get_user(token_data.claims.user_id).await
-            .map_err(|_| AppError::Authentication("User record not found or suspended".to_string()))?;
+        let user = state
+            .user_service
+            .get_user(token_data.claims.user_id)
+            .await
+            .map_err(|_| {
+                AppError::Authentication("User record not found or suspended".to_string())
+            })?;
 
         // Ensure user status is active and not deleted
         if user.status != "active" || user.deleted_at.is_some() {
-            return Err(AppError::Authentication("Your account has been deactivated or suspended".to_string()));
+            return Err(AppError::Authentication(
+                "Your account has been deactivated or suspended".to_string(),
+            ));
         }
 
         Ok(AuthenticatedUser(token_data.claims))

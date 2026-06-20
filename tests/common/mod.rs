@@ -93,7 +93,6 @@ pub async fn setup_app() -> (Router, PgPool) {
             .unwrap_or_else(|_| "http://localhost:3000".to_string()),
     };
 
-
     let db = rustom::infrastructure::init_db(&config)
         .await
         .expect("Failed to initialize test DB and run migrations");

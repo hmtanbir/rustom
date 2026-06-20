@@ -360,11 +360,12 @@ async fn test_update_user_password() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify the password digest has changed in the database
-    let updated_password_digest: String = sqlx::query_scalar("SELECT password_digest FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let updated_password_digest: String =
+        sqlx::query_scalar("SELECT password_digest FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
 
     assert_ne!(updated_password_digest, initial_hash);
 }
@@ -417,11 +418,12 @@ async fn test_admin_can_restore_deleted_user() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify it is null in database
-    let deleted_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar("SELECT deleted_at FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let deleted_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
 
     assert!(deleted_at.is_none());
 }

@@ -35,12 +35,16 @@ pub async fn registration(
 
     // Rate limiting: API_RATE_LIMIT requests per 60 seconds per email identifier
     let rate_limit_key = format!("rate_limit:register:{}", payload.email);
-    if let Ok(count) = state.user_service.get_cache().incr_with_ttl(&rate_limit_key, 60).await {
-        if count > *API_RATE_LIMIT {
-            return Err(AppError::Authorization(
-                "Too many registration attempts. Please try again in a minute.".to_string(),
-            ));
-        }
+    if let Ok(count) = state
+        .user_service
+        .get_cache()
+        .incr_with_ttl(&rate_limit_key, 60)
+        .await
+        && count > *API_RATE_LIMIT
+    {
+        return Err(AppError::Authorization(
+            "Too many registration attempts. Please try again in a minute.".to_string(),
+        ));
     }
 
     // Force role=1 (standard user) and status=1 (active) for public registration

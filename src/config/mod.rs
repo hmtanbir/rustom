@@ -1,7 +1,7 @@
 pub mod routes;
 
-use serde::Deserialize;
 pub use crate::utils::API_RATE_LIMIT;
+use serde::Deserialize;
 
 /// Global application configuration loaded from environment variables.
 #[derive(Clone, Debug, Deserialize)]
@@ -81,7 +81,8 @@ impl AppConfig {
             )?;
         }
 
-        let default_domain = std::env::var("DOMAIN_NAME").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let default_domain =
+            std::env::var("DOMAIN_NAME").unwrap_or_else(|_| "http://localhost:3000".to_string());
         builder = builder.set_default("domain_name", default_domain)?;
 
         builder.build()?.try_deserialize()

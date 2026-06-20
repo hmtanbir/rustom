@@ -4,8 +4,8 @@ use aes_gcm::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::RngCore;
-use std::sync::LazyLock;
 use std::env;
+use std::sync::LazyLock;
 
 static ENCRYPTION_KEY: LazyLock<Result<Key<Aes256Gcm>, String>> = LazyLock::new(|| {
     let key_str = env::var("API_ENCRYPTION_KEY").unwrap_or_default();
