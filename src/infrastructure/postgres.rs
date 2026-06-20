@@ -26,11 +26,21 @@ pub async fn init_db(config: &AppConfig) -> Result<PgPool, AppError> {
 
     // Seed data if the table is empty
     tracing::info!("Checking if seed data is needed...");
-    let seed_sql = include_str!("../../db/seeds/20260612000001_seed_users.sql");
-    let _ = sqlx::query(seed_sql)
-        .execute(&pool)
+    if let Ok(count) = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
         .await
-        .map_err(|e| tracing::warn!("Failed to execute seed data: {}", e));
+    {
+        if count.0 == 0 {
+            tracing::info!("Seeding database with default users...");
+            let seed_sql = include_str!("../../db/seeds/20260612000001_seed_users.sql");
+            let _ = sqlx::query(seed_sql)
+                .execute(&pool)
+                .await
+                .map_err(|e| tracing::warn!("Failed to execute seed data: {}", e));
+        } else {
+            tracing::info!("Seeding skipped: users table already contains records.");
+        }
+    }
 
     Ok(pool)
 }

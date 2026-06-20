@@ -28,8 +28,31 @@ impl UserService {
         Self { db, cache, config }
     }
 
+    pub fn get_cache(&self) -> &DynCacheService {
+        &self.cache
+    }
+
+    fn validate_password(&self, password: &str) -> Result<(), AppError> {
+        if password.len() < 8 {
+            return Err(AppError::InvalidInput("Password must be at least 8 characters long".to_string()));
+        }
+        let has_uppercase = password.chars().any(|c| c.is_uppercase());
+        let has_lowercase = password.chars().any(|c| c.is_lowercase());
+        let has_digit = password.chars().any(|c| c.is_numeric());
+        let has_special = password.chars().any(|c| !c.is_alphanumeric());
+
+        if !has_uppercase || !has_lowercase || !has_digit || !has_special {
+            return Err(AppError::InvalidInput(
+                "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character".to_string()
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn register(&self, dto: UserRegisterRequestDto) -> Result<UserSerializer, AppError> {
-        let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        self.validate_password(&dto.password)?;
+
+        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL")
             .bind(&dto.email)
             .fetch_optional(&self.db)
             .await?;
@@ -52,7 +75,7 @@ impl UserService {
             r#"
             INSERT INTO users (name, email, password_digest, role, status)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
+            RETURNING id, name, email, password_digest, role, status, created_at, updated_at, deleted_at
             "#,
         )
         .bind(&dto.name)
@@ -71,7 +94,7 @@ impl UserService {
     }
 
     pub async fn login(&self, dto: UserLoginRequestDto) -> Result<UserLoginResponseDto, AppError> {
-        let user_result = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        let user_result = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL")
             .bind(&dto.email)
             .fetch_optional(&self.db)
             .await?;
@@ -168,7 +191,7 @@ impl UserService {
             .map(|r| if r == "admin" { 0 } else { 1 });
         let deleted_filter = params.deleted.unwrap_or(false);
 
-        let mut query = "SELECT * FROM users WHERE 1=1".to_string();
+        let mut query = "SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE 1=1".to_string();
         let mut count_query = "SELECT COUNT(*) FROM users WHERE 1=1".to_string();
 
         if deleted_filter {
@@ -256,7 +279,7 @@ impl UserService {
             return Ok(cached_user);
         }
 
-        let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        let user = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE id = $1 AND deleted_at IS NULL")
             .bind(user_id)
             .fetch_optional(&self.db)
             .await?
@@ -276,7 +299,9 @@ impl UserService {
     }
 
     pub async fn create_user(&self, dto: UserCreateRequestDto) -> Result<UserSerializer, AppError> {
-        let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        self.validate_password(&dto.password)?;
+
+        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL")
             .bind(&dto.email)
             .fetch_optional(&self.db)
             .await?;
@@ -298,7 +323,7 @@ impl UserService {
             r#"
             INSERT INTO users (name, email, password_digest, role, status)
             VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
+            RETURNING id, name, email, password_digest, role, status, created_at, updated_at, deleted_at
             "#,
         )
         .bind(&dto.name)
@@ -323,7 +348,7 @@ impl UserService {
     ) -> Result<UserSerializer, AppError> {
         let mut tx = self.db.begin().await?;
 
-        let existing = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1 FOR UPDATE")
+        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE id = $1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?
@@ -333,7 +358,22 @@ impl UserService {
             return Err(AppError::NotFound("User not found".to_string()));
         }
 
+        if let Some(ref new_email) = dto.email {
+            if new_email != &existing.email {
+                let email_exists = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL")
+                    .bind(new_email)
+                    .bind(user_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+
+                if email_exists.is_some() {
+                    return Err(AppError::Conflict("Email is already registered by another user".to_string()));
+                }
+            }
+        }
+
         let password_digest = if let Some(ref pwd) = dto.password {
+            self.validate_password(pwd)?;
             let salt = SaltString::generate(&mut OsRng);
             let argon2 = Argon2::default();
             Some(
@@ -362,7 +402,7 @@ impl UserService {
                 deleted_at = CASE WHEN $6 THEN $7 ELSE deleted_at END,
                 updated_at = NOW()
             WHERE id = $8
-            RETURNING *
+            RETURNING id, name, email, password_digest, role, status, created_at, updated_at, deleted_at
             "#,
         )
         .bind(&dto.name)
@@ -386,8 +426,6 @@ impl UserService {
     }
 
     async fn invalidate_users_index(&self) {
-        // In a real app we'd use Redis SCAN/DEL or versioning.
-        // For simplicity we'll just increment a version key used in index cache keys.
         let _ = self
             .cache
             .set(
@@ -401,13 +439,13 @@ impl UserService {
     pub async fn soft_delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
         let mut tx = self.db.begin().await?;
 
-        let result = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1")
+        let result = sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
             .bind(user_id)
             .execute(&mut *tx)
             .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("User not found".to_string()));
+            return Err(AppError::NotFound("User not found or already deleted".to_string()));
         }
 
         tx.commit().await?;

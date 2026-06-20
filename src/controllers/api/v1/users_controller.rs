@@ -145,7 +145,7 @@ pub async fn update_me(
 
     Ok(Json(json!({
         "status": StatusCode::OK.as_u16(),
-        "message": "Successfully data fetched",
+        "message": "Successfully data updated",
         "data": user_dto
     })))
 }

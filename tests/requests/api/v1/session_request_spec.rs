@@ -18,15 +18,15 @@ async fn test_successful_login() {
     // Hardcoded Argon2 hash for 'password'
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Login Test User', $2, $3, 1, 1)
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -35,6 +35,7 @@ async fn test_successful_login() {
         "email": email,
         "password": "password"
     });
+
 
     let req = Request::builder()
         .method("POST")
@@ -114,15 +115,15 @@ async fn test_login_inactive_or_deleted_user() {
     let email = format!("inactive_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Inactive User', $2, $3, 1, 0)
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -156,15 +157,15 @@ async fn test_login_suspended_user() {
     let email = format!("suspended_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Suspended User', $2, $3, 1, 2)
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();

@@ -30,6 +30,16 @@ pub async fn create(
         ));
     }
 
+    // Rate limiting: 5 requests per 60 seconds per email identifier
+    let rate_limit_key = format!("rate_limit:login:{}", payload.email);
+    if let Ok(count) = state.user_service.get_cache().incr_with_ttl(&rate_limit_key, 60).await {
+        if count > 5 {
+            return Err(AppError::Authorization(
+                "Too many login attempts. Please try again in a minute.".to_string(),
+            ));
+        }
+    }
+
     // Attempt login via service
     let login_res = state.user_service.login(payload).await?;
 
