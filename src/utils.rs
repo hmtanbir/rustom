@@ -17,3 +17,11 @@ pub fn parse_yaml_map(yaml_str: &str) -> HashMap<String, i32> {
     }
     map
 }
+
+// static function to get API rate limit from environment variable.
+pub static API_RATE_LIMIT: std::sync::LazyLock<i64> = std::sync::LazyLock::new(|| {
+    std::env::var("API_RATE_LIMIT")
+        .ok()
+        .and_then(|val| val.parse::<i64>().ok())
+        .unwrap_or(5)
+});

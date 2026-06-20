@@ -1,6 +1,7 @@
 pub mod routes;
 
 use serde::Deserialize;
+pub use crate::utils::API_RATE_LIMIT;
 
 /// Global application configuration loaded from environment variables.
 #[derive(Clone, Debug, Deserialize)]

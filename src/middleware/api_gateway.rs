@@ -23,19 +23,17 @@ pub async fn verify_api_gateway_key(req: Request, next: Next) -> Result<Response
 
     if expected_key.is_empty() {
         if *APP_ENV == "production" {
-            return Err(AppError::Authorization(
-                "API Gateway Key is unset in production environment".to_string(),
-            ));
+            return Err(AppError::Authorization(error_message.clone()));
         }
         return Ok(next.run(req).await);
     }
 
-    if let Some(provided_key) = req.headers().get("x-api-gateway-key")
-        && let Ok(key_str) = provided_key.to_str()
-    {
-        use subtle::ConstantTimeEq;
-        if key_str.as_bytes().ct_eq(expected_key.as_bytes()).into() {
-            return Ok(next.run(req).await);
+    if let Some(provided_key) = req.headers().get("x-api-gateway-key") {
+        if let Ok(key_str) = provided_key.to_str() {
+            use subtle::ConstantTimeEq;
+            if key_str.as_bytes().ct_eq(expected_key.as_bytes()).into() {
+                return Ok(next.run(req).await);
+            }
         }
     }
 
