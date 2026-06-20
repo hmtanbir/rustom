@@ -22,6 +22,9 @@ impl rustom::services::cache::CacheService for MockCache {
     async fn delete(&self, _key: &str) -> Result<(), AppError> {
         Ok(())
     }
+    async fn incr_with_ttl(&self, _key: &str, _ttl_seconds: u64) -> Result<i64, AppError> {
+        Ok(1)
+    }
 }
 
 pub struct MockQueue;
@@ -86,7 +89,10 @@ pub async fn setup_app() -> (Router, PgPool) {
             .unwrap_or_else(|_| "3600".to_string())
             .parse()
             .unwrap_or(3600),
+        domain_name: std::env::var("DOMAIN_NAME")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string()),
     };
+
 
     let db = rustom::infrastructure::init_db(&config)
         .await
@@ -103,7 +109,7 @@ pub async fn setup_app() -> (Router, PgPool) {
         )
         .is_ok()
     {
-        sqlx::query!("TRUNCATE TABLE users CASCADE;")
+        sqlx::query("TRUNCATE TABLE users CASCADE;")
             .execute(&db)
             .await
             .expect("Failed to truncate tables");
