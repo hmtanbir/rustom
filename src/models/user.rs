@@ -44,26 +44,10 @@ impl<T> UserPayloadWrapper<T> {
     }
 }
 
+use crate::utils::parse_yaml_map;
 use serde::Deserializer;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-
-fn parse_yaml_map(yaml_str: &str) -> HashMap<String, i32> {
-    let mut map = HashMap::new();
-    for line in yaml_str.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((key, val)) = line.split_once(':') {
-            let key = key.trim().to_lowercase();
-            if let Ok(parsed_val) = val.trim().parse::<i32>() {
-                map.insert(key, parsed_val);
-            }
-        }
-    }
-    map
-}
 
 pub static ROLES_MAP: LazyLock<HashMap<String, i32>> = LazyLock::new(|| {
     let paths = [
@@ -120,7 +104,16 @@ where
                 Err(serde::de::Error::custom(format!("Invalid role: {}", s)))
             }
         }
-        Some(RoleInput::Int(i)) => Ok(Some(i)),
+        Some(RoleInput::Int(i)) => {
+            if ROLES_MAP.values().any(|&v| v == i) {
+                Ok(Some(i))
+            } else {
+                Err(serde::de::Error::custom(format!(
+                    "Invalid role integer value: {}",
+                    i
+                )))
+            }
+        }
         None => Ok(None),
     }
 }
@@ -146,7 +139,16 @@ where
                 Err(serde::de::Error::custom(format!("Invalid status: {}", s)))
             }
         }
-        Some(StatusInput::Int(i)) => Ok(Some(i)),
+        Some(StatusInput::Int(i)) => {
+            if STATUSES_MAP.values().any(|&v| v == i) {
+                Ok(Some(i))
+            } else {
+                Err(serde::de::Error::custom(format!(
+                    "Invalid status integer value: {}",
+                    i
+                )))
+            }
+        }
         None => Ok(None),
     }
 }

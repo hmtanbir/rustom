@@ -16,6 +16,9 @@ pub trait CacheService: Send + Sync {
 
     /// Remove a value from cache by key.
     async fn delete(&self, key: &str) -> Result<(), AppError>;
+
+    /// Increment an integer value in the cache, setting a TTL if key does not exist. Returns the new value.
+    async fn incr_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<i64, AppError>;
 }
 
 /// Redis-backed implementation of CacheService.
@@ -79,6 +82,29 @@ impl CacheService for RedisCacheService {
             .map_err(|e| AppError::Cache(format!("Redis DEL command failed: {}", e)))?;
 
         Ok(())
+    }
+
+    async fn incr_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<i64, AppError> {
+        let mut conn = self.pool.get().await.map_err(|e| {
+            AppError::Cache(format!(
+                "Failed to acquire connection from Redis pool: {}",
+                e
+            ))
+        })?;
+
+        let val: i64 = conn
+            .incr(key, 1)
+            .await
+            .map_err(|e| AppError::Cache(format!("Redis INCR command failed: {}", e)))?;
+
+        if val == 1 {
+            let _: () = conn
+                .expire(key, ttl_seconds as i64)
+                .await
+                .map_err(|e| AppError::Cache(format!("Redis EXPIRE command failed: {}", e)))?;
+        }
+
+        Ok(val)
     }
 }
 

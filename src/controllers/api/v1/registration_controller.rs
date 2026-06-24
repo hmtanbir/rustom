@@ -2,6 +2,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use serde_json::{Value, json};
 
 use crate::app_state::AppState;
+use crate::config::API_RATE_LIMIT;
 use crate::errors::AppError;
 use crate::extractors::AppJson;
 use crate::models::{UserPayloadWrapper, UserRegisterRequestDto};
@@ -21,7 +22,7 @@ pub async fn registration(
     State(state): State<AppState>,
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserRegisterRequestDto>>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let payload = payload_wrapper.into_inner();
+    let mut payload = payload_wrapper.into_inner();
 
     if payload.email.trim().is_empty()
         || payload.password.trim().is_empty()
@@ -31,6 +32,24 @@ pub async fn registration(
             "Name, email and password are required".to_string(),
         ));
     }
+
+    // Rate limiting: API_RATE_LIMIT requests per 60 seconds per email identifier
+    let rate_limit_key = format!("rate_limit:register:{}", payload.email);
+    if let Ok(count) = state
+        .user_service
+        .get_cache()
+        .incr_with_ttl(&rate_limit_key, 60)
+        .await
+        && count > *API_RATE_LIMIT
+    {
+        return Err(AppError::Authorization(
+            "Too many registration attempts. Please try again in a minute.".to_string(),
+        ));
+    }
+
+    // Force role=1 (standard user) and status=1 (active) for public registration
+    payload.role = Some(1);
+    payload.status = Some(1);
 
     let user_dto = state.user_service.register(payload).await?;
 

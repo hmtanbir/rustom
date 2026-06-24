@@ -5,32 +5,39 @@ use aes_gcm::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::RngCore;
 use std::env;
+use std::sync::LazyLock;
+
+static ENCRYPTION_KEY: LazyLock<Result<Key<Aes256Gcm>, String>> = LazyLock::new(|| {
+    let key_str = env::var("API_ENCRYPTION_KEY").unwrap_or_default();
+    let mut key_bytes = vec![0u8; 32];
+
+    if key_str.len() == 64 && key_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        if let Ok(decoded) = hex::decode(&key_str) {
+            key_bytes.copy_from_slice(&decoded);
+            Ok(*Key::<Aes256Gcm>::from_slice(&key_bytes))
+        } else {
+            Err("API_ENCRYPTION_KEY must be a valid 64-character hex string".to_string())
+        }
+    } else {
+        Err("API_ENCRYPTION_KEY must be exactly 64 characters of hex".to_string())
+    }
+});
 
 pub struct EncryptionService;
 
 impl EncryptionService {
     pub fn encryption_enabled() -> bool {
-        env::var("API_PAYLOAD_ENCRYPTION_ENABLED").unwrap_or_default() == "true"
+        static ENABLED: LazyLock<bool> = LazyLock::new(|| {
+            env::var("API_PAYLOAD_ENCRYPTION_ENABLED").unwrap_or_default() == "true"
+        });
+        *ENABLED
     }
 
     fn get_key() -> anyhow::Result<Key<Aes256Gcm>> {
-        let key_str = env::var("API_ENCRYPTION_KEY").unwrap_or_default();
-        let mut key_bytes = vec![0u8; 32];
-
-        if key_str.len() == 64 && key_str.chars().all(|c| c.is_ascii_hexdigit()) {
-            if let Ok(decoded) = hex::decode(&key_str) {
-                key_bytes.copy_from_slice(&decoded);
-                Ok(*Key::<Aes256Gcm>::from_slice(&key_bytes))
-            } else {
-                Err(anyhow::anyhow!(
-                    "API_ENCRYPTION_KEY must be a valid 64-character hex string"
-                ))
-            }
-        } else {
-            Err(anyhow::anyhow!(
-                "API_ENCRYPTION_KEY must be exactly 64 characters of hex"
-            ))
-        }
+        ENCRYPTION_KEY
+            .as_ref()
+            .map(|k| *k)
+            .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub fn encrypt(plain_text: &str) -> anyhow::Result<String> {

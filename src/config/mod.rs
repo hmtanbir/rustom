@@ -1,5 +1,6 @@
 pub mod routes;
 
+pub use crate::utils::API_RATE_LIMIT;
 use serde::Deserialize;
 
 /// Global application configuration loaded from environment variables.
@@ -19,6 +20,8 @@ pub struct AppConfig {
     pub jwt_secret: String,
     /// Duration in seconds for JWT tokens to remain valid.
     pub jwt_expiration_seconds: u64,
+    /// Allowed domain(s) for CORS.
+    pub domain_name: String,
 }
 
 impl AppConfig {
@@ -77,6 +80,10 @@ impl AppConfig {
                 format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost),
             )?;
         }
+
+        let default_domain =
+            std::env::var("DOMAIN_NAME").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        builder = builder.set_default("domain_name", default_domain)?;
 
         builder.build()?.try_deserialize()
     }

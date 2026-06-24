@@ -33,6 +33,23 @@ fn generate_test_token(user_id: uuid::Uuid, role: i32) -> String {
     .unwrap()
 }
 
+async fn generate_db_token(db: &sqlx::PgPool, user_id: uuid::Uuid, role: i32) -> String {
+    let email = format!("user_{}_{}@example.com", role, user_id);
+    let pwd_digest = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status) VALUES ($1, $2, $3, $4, $5, $6)")
+        .bind(user_id)
+        .bind("Test User")
+        .bind(email)
+        .bind(pwd_digest)
+        .bind(role)
+        .bind(1)
+        .execute(db)
+        .await
+        .unwrap();
+
+    generate_test_token(user_id, role)
+}
+
 #[tokio::test]
 async fn test_user_registration() {
     let (app, _db) = common::setup_app().await;
@@ -44,7 +61,7 @@ async fn test_user_registration() {
         "user": {
             "name": "Test User",
             "email": email,
-            "password": "password123"
+            "password": "Password123!"
         }
     });
 
@@ -71,15 +88,15 @@ async fn test_get_me_authenticated() {
     let email = format!("me_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Me User', $2, $3, 1, 1)
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -109,11 +126,11 @@ async fn test_get_me_authenticated() {
 
 #[tokio::test]
 async fn test_get_users_as_admin() {
-    let (app, _db) = common::setup_app().await;
+    let (app, db) = common::setup_app().await;
     let gateway_key = common::get_gateway_key();
 
     let admin_id = uuid::Uuid::new_v4();
-    let token = generate_test_token(admin_id, 0); // 0 = Admin
+    let token = generate_db_token(&db, admin_id, 0).await; // 0 = Admin
 
     let req = Request::builder()
         .method("GET")
@@ -131,11 +148,11 @@ async fn test_get_users_as_admin() {
 
 #[tokio::test]
 async fn test_get_users_as_standard_user_is_forbidden() {
-    let (app, _db) = common::setup_app().await;
+    let (app, db) = common::setup_app().await;
     let gateway_key = common::get_gateway_key();
 
     let user_id = uuid::Uuid::new_v4();
-    let token = generate_test_token(user_id, 1); // 1 = Standard User
+    let token = generate_db_token(&db, user_id, 1).await; // 1 = Standard User
 
     let req = Request::builder()
         .method("GET")
@@ -161,15 +178,15 @@ async fn test_user_registration_duplicate_email() {
     // Seed the first user
     let user_id = uuid::Uuid::new_v4();
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Existing User', $2, $3, 1, 1)
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -179,7 +196,7 @@ async fn test_user_registration_duplicate_email() {
         "user": {
             "name": "Another User",
             "email": email,
-            "password": "password123"
+            "password": "Password123!"
         }
     });
 
@@ -252,22 +269,22 @@ async fn test_delete_user_as_admin_vs_standard_user() {
     let target_user_id = uuid::Uuid::new_v4();
     let email = format!("target_{}@example.com", target_user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Target User', $2, $3, 1, 1)
         "#,
-        target_user_id,
-        email,
-        password_hash
     )
+    .bind(target_user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
 
     // 1. Try to delete as standard user (forbidden)
     let standard_user_id = uuid::Uuid::new_v4();
-    let standard_token = generate_test_token(standard_user_id, 1); // 1 = Standard User
+    let standard_token = generate_db_token(&db, standard_user_id, 1).await; // 1 = Standard User
 
     let req_std = Request::builder()
         .method("DELETE")
@@ -283,7 +300,7 @@ async fn test_delete_user_as_admin_vs_standard_user() {
 
     // 2. Delete as admin (success)
     let admin_id = uuid::Uuid::new_v4();
-    let admin_token = generate_test_token(admin_id, 0); // 0 = Admin
+    let admin_token = generate_db_token(&db, admin_id, 0).await; // 0 = Admin
 
     let req_admin = Request::builder()
         .method("DELETE")
@@ -307,15 +324,15 @@ async fn test_update_user_password() {
     let email = format!("update_pwd_{}@example.com", user_id);
     let initial_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs"; // for "password"
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status)
         VALUES ($1, 'Update Password User', $2, $3, 1, 1)
         "#,
-        user_id,
-        email,
-        initial_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(initial_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -324,7 +341,7 @@ async fn test_update_user_password() {
 
     let payload = json!({
         "user": {
-            "password": "new_secure_password"
+            "password": "Newpassword123!"
         }
     });
 
@@ -343,12 +360,14 @@ async fn test_update_user_password() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify the password digest has changed in the database
-    let updated_user = sqlx::query!("SELECT password_digest FROM users WHERE id = $1", user_id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let updated_password_digest: String =
+        sqlx::query_scalar("SELECT password_digest FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
 
-    assert_ne!(updated_user.password_digest, initial_hash);
+    assert_ne!(updated_password_digest, initial_hash);
 }
 
 #[tokio::test]
@@ -361,22 +380,22 @@ async fn test_admin_can_restore_deleted_user() {
     let email = format!("deleted_user_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
         VALUES ($1, 'Deleted User', $2, $3, 1, 1, NOW())
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
 
     // 2. Perform patch update as admin to set deleted_at to null
     let admin_id = uuid::Uuid::new_v4();
-    let admin_token = generate_test_token(admin_id, 0); // 0 = Admin
+    let admin_token = generate_db_token(&db, admin_id, 0).await; // 0 = Admin
 
     let payload = json!({
         "user": {
@@ -399,12 +418,14 @@ async fn test_admin_can_restore_deleted_user() {
     assert_eq!(response.status(), StatusCode::OK);
 
     // Verify it is null in database
-    let user_db = sqlx::query!("SELECT deleted_at FROM users WHERE id = $1", user_id)
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let deleted_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
 
-    assert!(user_db.deleted_at.is_none());
+    assert!(deleted_at.is_none());
 }
 
 #[tokio::test]
@@ -417,15 +438,15 @@ async fn test_non_admin_cannot_update_deleted_at() {
     let email = format!("user_to_check_{}@example.com", user_id);
     let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$mIk38++6ZCEyzKo+edgXEw$/h0anRjDkzS46suJM6/P3+DySS3qp1+6jXtNjd6UMTs";
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO users (id, name, email, password_digest, role, status, deleted_at)
         VALUES ($1, 'Test User', $2, $3, 1, 1, NOW())
         "#,
-        user_id,
-        email,
-        password_hash
     )
+    .bind(user_id)
+    .bind(&email)
+    .bind(password_hash)
     .execute(&db)
     .await
     .unwrap();
@@ -451,6 +472,6 @@ async fn test_non_admin_cannot_update_deleted_at() {
     let mut app = app;
     let response = app.call(req).await.unwrap();
 
-    // Standard user gets NOT_FOUND because their deleted_at: null payload gets stripped and user is soft-deleted
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // Standard user gets UNAUTHORIZED because their user account is soft-deleted and fails auth DB lookup check
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
