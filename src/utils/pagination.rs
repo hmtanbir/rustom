@@ -25,14 +25,15 @@ impl PaginationParams {
 
     pub fn validate(&self) -> Result<(), AppError> {
         if let Some(per_page) = self.per_page
-            && per_page > 100 {
-                let mut errors = HashMap::new();
-                errors.insert(
-                    "per_page".to_string(),
-                    vec!["per_page must not exceed 100".to_string()],
-                );
-                return Err(AppError::Validation(errors));
-            }
+            && per_page > 100
+        {
+            let mut errors = HashMap::new();
+            errors.insert(
+                "per_page".to_string(),
+                vec!["per_page must not exceed 100".to_string()],
+            );
+            return Err(AppError::Validation(errors));
+        }
         Ok(())
     }
 }
