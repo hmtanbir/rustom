@@ -1,3 +1,4 @@
+use axum::response::IntoResponse;
 use axum::{Extension, Router};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use utoipa_swagger_ui::SwaggerUi;
@@ -7,6 +8,27 @@ use crate::controllers::api_routes;
 use crate::docs::ApiDoc;
 use crate::middleware::{payload_encryption, verify_api_gateway_key};
 use utoipa::OpenApi;
+
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub struct HealthResponse {
+    /// The status of the API
+    #[schema(example = "OK")]
+    pub status: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "API is healthy", body = HealthResponse)
+    ),
+    tag = "Health"
+)]
+pub async fn health_check() -> impl IntoResponse {
+    axum::Json(HealthResponse {
+        status: "OK".to_string(),
+    })
+}
 
 /// Build the Axum Router configuring routes, CORS, logging, and Swagger UI.
 pub fn create_router(state: AppState) -> Router {
@@ -36,7 +58,8 @@ pub fn create_router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(verify_api_gateway_key))
         .layer(axum::middleware::from_fn(payload_encryption));
 
-    let mut router = Router::new();
+    let mut router = Router::new().route("/health", axum::routing::get(health_check));
+
     // Serve OpenAPI document & Swagger UI automatically at /api-docs ONLY in non-production environments
     if app_env != "production" {
         router = router

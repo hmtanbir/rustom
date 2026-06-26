@@ -4,3 +4,4 @@
 .env.*
 !.env.example
 REVIEW.md
+tmp/*
