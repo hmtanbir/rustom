@@ -6,7 +6,6 @@ services:
     container_name: rustom_postgres
     restart: unless-stopped
     command:
-      - "postgres"
       - "-c"
       - "shared_buffers=64MB"
       - "-c"

@@ -74,6 +74,11 @@ COPY --from=chef /etc/passwd /etc/passwd
 COPY --from=chef /etc/group /etc/group
 COPY --from=chef /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
+# Copy required dynamic libraries from the chef stage
+COPY --from=chef /usr/lib/libssl.so.3 /usr/lib/libssl.so.3
+COPY --from=chef /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
+COPY --from=chef /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
+
 # Copy build artifact and set ownership
 COPY --from=builder --chown=appuser:appgroup /app/rustom-bin /app/rustom
 
