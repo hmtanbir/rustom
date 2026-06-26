@@ -17,7 +17,7 @@ RUN mkdir -p /usr/local/bin && \
       "linux/arm64") ARCH="aarch64-unknown-linux-musl" ;; \
       *) ARCH="x86_64-unknown-linux-musl" ;; \
     esac && \
-    wget -qO- "https://github.com/LukeMathWalker/cargo-chef/releases/download/v0.1.68/cargo-chef-${ARCH}.tar.gz" | tar xz -C /usr/local/bin
+    wget -qO- "https://github.com/LukeMathWalker/cargo-chef/releases/download/v0.1.77/cargo-chef-${ARCH}.tar.gz" | tar xz -C /usr/local/bin
 WORKDIR /app
 
 # ---------------------------------------------------
