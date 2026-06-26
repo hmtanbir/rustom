@@ -101,7 +101,7 @@ services:
         max-file: "3"
 
   api:
-    image: hmtanbir/blog-api:1.0.0
+    image: hmtanbir/rustom:1.0.0
     build:
       context: .
       dockerfile: Dockerfile
