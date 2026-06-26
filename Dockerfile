@@ -9,10 +9,14 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 ENV CARGO_HTTP_TIMEOUT=120
 ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_LOW_SPEED_LIMIT=5
-# Install cargo-chef utilizing cache mounts to avoid re-compiling from scratch
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo install cargo-chef --locked
+# Install cargo-chef by downloading the precompiled binary
+ARG TARGETPLATFORM
+RUN case "${TARGETPLATFORM}" in \
+      "linux/amd64") ARCH="x86_64-unknown-linux-musl" ;; \
+      "linux/arm64") ARCH="aarch64-unknown-linux-musl" ;; \
+      *) ARCH="x86_64-unknown-linux-musl" ;; \
+    esac && \
+    wget -qO- "https://github.com/LukeMathWalker/cargo-chef/releases/download/v0.1.68/cargo-chef-${ARCH}.tar.gz" | tar xz -C /usr/local/bin
 WORKDIR /app
 
 # ---------------------------------------------------
