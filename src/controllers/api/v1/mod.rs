@@ -26,4 +26,5 @@ pub fn routes() -> Router<AppState> {
                 .patch(users_controller::update)
                 .delete(users_controller::destroy),
         )
+        .route("/users/:id/restore", post(users_controller::restore))
 }

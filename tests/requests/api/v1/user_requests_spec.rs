@@ -211,7 +211,7 @@ async fn test_user_registration_duplicate_email() {
     let mut app = app;
     let response = app.call(req).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -312,7 +312,7 @@ async fn test_delete_user_as_admin_vs_standard_user() {
 
     let mut app_admin = app;
     let response_admin = app_admin.call(req_admin).await.unwrap();
-    assert_eq!(response_admin.status(), StatusCode::OK);
+    assert_eq!(response_admin.status(), StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]

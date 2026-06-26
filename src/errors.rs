@@ -19,6 +19,9 @@ pub enum AppError {
     #[error("Message queue error: {0}")]
     Queue(#[from] lapin::Error),
 
+    #[error("API Gateway authentication failed: {0}")]
+    GatewayAuth(String),
+
     #[error("Authentication failed: {0}")]
     Authentication(String),
 
@@ -34,39 +37,67 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    #[error("Validation failed")]
+    Validation(std::collections::HashMap<String, Vec<String>>),
+
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match &self {
+        let (status, error_message, data) = match &self {
             AppError::Database(err) => {
                 tracing::error!("Database error occurred: {:?}", err);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal database error".to_string(),
+                    "Internal Server Error".to_string(),
+                    serde_json::Value::Null,
                 )
             }
             AppError::Cache(err) => {
                 tracing::error!("Cache error occurred: {}", err);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal cache error".to_string(),
+                    "Internal Server Error".to_string(),
+                    serde_json::Value::Null,
                 )
             }
             AppError::Queue(err) => {
                 tracing::error!("Queue error occurred: {:?}", err);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal queue error".to_string(),
+                    "Internal Server Error".to_string(),
+                    serde_json::Value::Null,
                 )
             }
-            AppError::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
-            AppError::Authorization(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            AppError::InvalidInput(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()), // Matching Rails unprocessable_content
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            AppError::GatewayAuth(msg) => (
+                StatusCode::UNAUTHORIZED,
+                msg.clone(),
+                serde_json::Value::Null,
+            ),
+            AppError::Authentication(msg) => (
+                StatusCode::UNAUTHORIZED,
+                msg.clone(),
+                serde_json::Value::Null,
+            ),
+            AppError::Authorization(msg) => {
+                (StatusCode::FORBIDDEN, msg.clone(), serde_json::Value::Null)
+            }
+            AppError::InvalidInput(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                msg.clone(),
+                serde_json::Value::Null,
+            ),
+            AppError::NotFound(msg) => {
+                (StatusCode::NOT_FOUND, msg.clone(), serde_json::Value::Null)
+            }
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone(), serde_json::Value::Null),
+            AppError::Validation(errors) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Validation failed".to_string(),
+                serde_json::to_value(errors).unwrap_or(serde_json::Value::Null),
+            ),
             AppError::Unexpected(err) => {
                 tracing::error!("Unexpected application error: {:?}", err);
                 let msg = err.to_string();
@@ -79,7 +110,8 @@ impl IntoResponse for AppError {
 
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "An unexpected error occurred".to_string(),
+                    "Internal Server Error".to_string(),
+                    serde_json::Value::Null,
                 )
             }
         };
@@ -87,7 +119,7 @@ impl IntoResponse for AppError {
         let body = Json(json!({
             "status": status.as_u16(),
             "message": error_message,
-            "data": null
+            "data": if data.is_null() { serde_json::Value::Null } else { data }
         }));
 
         (status, body).into_response()

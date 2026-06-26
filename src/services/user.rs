@@ -10,11 +10,14 @@ use uuid::Uuid;
 use crate::config::AppConfig;
 use crate::errors::AppError;
 use crate::models::{
-    Claims, PaginatedResponse, PaginationParams, User, UserCreateRequestDto, UserLoginRequestDto,
-    UserLoginResponseDto, UserRegisterRequestDto, UserUpdateRequestDto,
+    Claims, User, UserCreateRequestDto, UserLoginRequestDto, UserLoginResponseDto,
+    UserRegisterRequestDto, UserUpdateRequestDto,
 };
+use crate::queries::UserQueryParams;
 use crate::serializers::user_serializer::UserSerializer;
 use crate::services::cache::DynCacheService;
+use crate::utils::pagination::{PaginatedResponse, PaginationParams};
+use crate::validations::{validate_user_create, validate_user_update};
 
 #[derive(Clone)]
 pub struct UserService {
@@ -53,17 +56,13 @@ impl UserService {
 
     pub async fn register(&self, dto: UserRegisterRequestDto) -> Result<UserSerializer, AppError> {
         self.validate_password(&dto.password)?;
-
-        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL")
-            .bind(&dto.email)
-            .fetch_optional(&self.db)
-            .await?;
-
-        if existing.is_some() {
-            return Err(AppError::Conflict(
-                "Email is already registered".to_string(),
-            ));
-        }
+        validate_user_create(
+            &self.db,
+            Some(&dto.name),
+            Some(&dto.email),
+            Some(&dto.password),
+        )
+        .await?;
 
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -163,6 +162,7 @@ impl UserService {
     pub async fn get_users_paginated(
         &self,
         params: PaginationParams,
+        filter: UserQueryParams,
     ) -> Result<PaginatedResponse<UserSerializer>, AppError> {
         let version = self
             .cache
@@ -172,9 +172,13 @@ impl UserService {
             .unwrap_or_else(|| "0".to_string());
 
         let cache_key = format!(
-            "users_index/{}/{}/{}/{}/{}",
-            params.role.as_deref().unwrap_or("all"),
-            params.deleted.unwrap_or(false),
+            "users_index/{}/{}/{}/{}/{}/{}/{}/{}/{}",
+            filter.email.as_deref().unwrap_or("all"),
+            filter.role.as_deref().unwrap_or("all"),
+            filter.status.as_deref().unwrap_or("all"),
+            filter.uuid.as_deref().unwrap_or("all"),
+            filter.deleted.unwrap_or(false),
+            filter.order.as_deref().unwrap_or("desc"),
             params.get_page(),
             params.get_per_page(),
             version
@@ -187,37 +191,101 @@ impl UserService {
             return Ok(cached);
         }
 
-        let role_filter = params
-            .role
-            .as_deref()
-            .map(|r| if r == "admin" { 0 } else { 1 });
-        let deleted_filter = params.deleted.unwrap_or(false);
+        let mut query = sqlx::QueryBuilder::<'_, sqlx::Postgres>::new(
+            "SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE 1=1",
+        );
+        let mut count_query =
+            sqlx::QueryBuilder::<'_, sqlx::Postgres>::new("SELECT COUNT(*) FROM users WHERE 1=1");
 
-        let mut query = "SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE 1=1".to_string();
-        let mut count_query = "SELECT COUNT(*) FROM users WHERE 1=1".to_string();
-
+        let deleted_filter = filter.deleted.unwrap_or(false);
         if deleted_filter {
-            query.push_str(" AND deleted_at IS NOT NULL");
-            count_query.push_str(" AND deleted_at IS NOT NULL");
+            query.push(" AND deleted_at IS NOT NULL");
+            count_query.push(" AND deleted_at IS NOT NULL");
         } else {
-            query.push_str(" AND deleted_at IS NULL");
-            count_query.push_str(" AND deleted_at IS NULL");
+            query.push(" AND deleted_at IS NULL");
+            count_query.push(" AND deleted_at IS NULL");
         }
 
-        let mut bind_params = 1;
-
-        if role_filter.is_some() {
-            query.push_str(&format!(" AND role = ${}", bind_params));
-            count_query.push_str(&format!(" AND role = ${}", bind_params));
-            bind_params += 1;
+        if let Some(ref email_str) = filter.email {
+            let email_pattern = format!("%{}%", email_str);
+            query.push(" AND email ILIKE ");
+            query.push_bind(email_pattern.clone());
+            count_query.push(" AND email ILIKE ");
+            count_query.push_bind(email_pattern);
         }
 
-        let mut count_q = sqlx::query_as::<_, (i64,)>(&count_query);
-        if let Some(r) = role_filter {
-            count_q = count_q.bind(r);
+        if let Some(ref role_str) = filter.role {
+            let role_str_lower = role_str.to_lowercase();
+            let mut matched_roles = Vec::new();
+            for (role_name, &role_id) in crate::models::user::ROLES_MAP.iter() {
+                if role_name.to_lowercase().contains(&role_str_lower) {
+                    matched_roles.push(role_id);
+                }
+            }
+            if matched_roles.is_empty() {
+                query.push(" AND 1=0");
+                count_query.push(" AND 1=0");
+            } else {
+                query.push(" AND role IN (");
+                count_query.push(" AND role IN (");
+                let mut first = true;
+                for r in matched_roles {
+                    if !first {
+                        query.push(", ");
+                        count_query.push(", ");
+                    }
+                    first = false;
+                    query.push_bind(r);
+                    count_query.push_bind(r);
+                }
+                query.push(")");
+                count_query.push(")");
+            }
         }
-        let total_count = count_q.fetch_one(&self.db).await?;
-        let total_count = total_count.0 as u32;
+
+        if let Some(ref status_str) = filter.status {
+            let status_str_lower = status_str.to_lowercase();
+            let mut matched_statuses = Vec::new();
+            for (status_name, &status_id) in crate::models::user::STATUSES_MAP.iter() {
+                if status_name.to_lowercase().contains(&status_str_lower) {
+                    matched_statuses.push(status_id);
+                }
+            }
+            if matched_statuses.is_empty() {
+                query.push(" AND 1=0");
+                count_query.push(" AND 1=0");
+            } else {
+                query.push(" AND status IN (");
+                count_query.push(" AND status IN (");
+                let mut first = true;
+                for s in matched_statuses {
+                    if !first {
+                        query.push(", ");
+                        count_query.push(", ");
+                    }
+                    first = false;
+                    query.push_bind(s);
+                    count_query.push_bind(s);
+                }
+                query.push(")");
+                count_query.push(")");
+            }
+        }
+
+        if let Some(ref uuid_str) = filter.uuid {
+            if let Ok(parsed_uuid) = uuid::Uuid::parse_str(uuid_str.as_str()) {
+                query.push(" AND id = ");
+                query.push_bind(parsed_uuid);
+                count_query.push(" AND id = ");
+                count_query.push_bind(parsed_uuid);
+            } else {
+                query.push(" AND 1=0");
+                count_query.push(" AND 1=0");
+            }
+        }
+
+        let total_count: i64 = count_query.build_query_scalar().fetch_one(&self.db).await?;
+        let total_count = total_count as u32;
 
         let total_pages = if total_count == 0 {
             1
@@ -225,21 +293,18 @@ impl UserService {
             (total_count as f32 / params.get_per_page() as f32).ceil() as u32
         };
 
-        query.push_str(&format!(
-            " ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
-            bind_params,
-            bind_params + 1
-        ));
+        let order_dir = match filter.order.as_deref() {
+            Some("asc") => "ASC",
+            _ => "DESC",
+        };
 
-        let mut users_q = sqlx::query_as::<_, User>(&query);
-        if let Some(r) = role_filter {
-            users_q = users_q.bind(r);
-        }
-        let users = users_q
-            .bind(params.get_per_page() as i64)
-            .bind(params.offset() as i64)
-            .fetch_all(&self.db)
-            .await?;
+        query.push(format!(" ORDER BY created_at {}", order_dir));
+        query.push(" LIMIT ");
+        query.push_bind(params.get_per_page() as i64);
+        query.push(" OFFSET ");
+        query.push_bind(params.offset() as i64);
+
+        let users = query.build_query_as::<User>().fetch_all(&self.db).await?;
 
         let response = PaginatedResponse {
             status: 200,
@@ -285,7 +350,7 @@ impl UserService {
             .bind(user_id)
             .fetch_optional(&self.db)
             .await?
-            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+            .ok_or_else(|| AppError::NotFound("Not Found".to_string()))?;
 
         let user_dto = UserSerializer::from(user);
 
@@ -302,17 +367,13 @@ impl UserService {
 
     pub async fn create_user(&self, dto: UserCreateRequestDto) -> Result<UserSerializer, AppError> {
         self.validate_password(&dto.password)?;
-
-        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL")
-            .bind(&dto.email)
-            .fetch_optional(&self.db)
-            .await?;
-
-        if existing.is_some() {
-            return Err(AppError::Conflict(
-                "Email is already registered".to_string(),
-            ));
-        }
+        validate_user_create(
+            &self.db,
+            Some(&dto.name),
+            Some(&dto.email),
+            Some(&dto.password),
+        )
+        .await?;
 
         let salt = SaltString::generate(&mut OsRng);
         let password_digest = Argon2::default()
@@ -348,32 +409,18 @@ impl UserService {
         user_id: Uuid,
         dto: UserUpdateRequestDto,
     ) -> Result<UserSerializer, AppError> {
+        validate_user_update(&self.db, user_id, dto.email.as_deref()).await?;
+
         let mut tx = self.db.begin().await?;
 
         let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE id = $1 FOR UPDATE")
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+            .ok_or_else(|| AppError::NotFound("Not Found".to_string()))?;
 
         if existing.deleted_at.is_some() && dto.deleted_at != Some(None) {
-            return Err(AppError::NotFound("User not found".to_string()));
-        }
-
-        if let Some(ref new_email) = dto.email
-            && new_email != &existing.email
-        {
-            let email_exists = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE email = $1 AND id != $2 AND deleted_at IS NULL")
-                    .bind(new_email)
-                    .bind(user_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-
-            if email_exists.is_some() {
-                return Err(AppError::Conflict(
-                    "Email is already registered by another user".to_string(),
-                ));
-            }
+            return Err(AppError::NotFound("Not Found".to_string()));
         }
 
         let password_digest = if let Some(ref pwd) = dto.password {
@@ -429,6 +476,43 @@ impl UserService {
         Ok(UserSerializer::from(user))
     }
 
+    pub async fn restore_user(&self, user_id: Uuid) -> Result<UserSerializer, AppError> {
+        let mut tx = self.db.begin().await?;
+
+        let existing = sqlx::query_as::<_, User>("SELECT id, name, email, password_digest, role, status, created_at, updated_at, deleted_at FROM users WHERE id = $1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Not Found".to_string()))?;
+
+        if existing.deleted_at.is_none() {
+            let mut errors = std::collections::HashMap::new();
+            errors.insert("deleted_at".to_string(), vec!["is not deleted".to_string()]);
+            return Err(AppError::Validation(errors));
+        }
+
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            UPDATE users
+            SET deleted_at = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, name, email, password_digest, role, status, created_at, updated_at, deleted_at
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        let cache_key = format!("user:profile:{}", user_id);
+        let _ = self.cache.delete(&cache_key).await;
+        self.invalidate_users_index().await;
+
+        Ok(UserSerializer::from(user))
+    }
+
     async fn invalidate_users_index(&self) {
         let _ = self
             .cache
@@ -450,9 +534,7 @@ impl UserService {
                 .await?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound(
-                "User not found or already deleted".to_string(),
-            ));
+            return Err(AppError::NotFound("Not Found".to_string()));
         }
 
         tx.commit().await?;

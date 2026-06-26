@@ -10,20 +10,22 @@ use crate::app_state::AppState;
 use crate::errors::AppError;
 use crate::extractors::AppJson;
 use crate::middleware::AuthenticatedUser;
-use crate::models::{
-    PaginationParams, UserCreateRequestDto, UserPayloadWrapper, UserUpdateRequestDto,
-};
+use crate::models::UserPayloadWrapper;
+use crate::models::{UserCreateRequestDto, UserUpdateRequestDto};
 use crate::policies::UserPolicy;
+use crate::queries::UserQueryParams;
+use crate::utils::pagination::PaginationParams;
 
 #[utoipa::path(
     get,
     path = "/api/v1/users",
     tag = "Users",
     params(
+        UserQueryParams,
         PaginationParams
     ),
     responses(
-        (status = 200, description = "Successfully fetched paginated list of users", body = crate::models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>),
+        (status = 200, description = "Successfully fetched paginated list of users", body = crate::utils::pagination::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>),
         (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
         (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto)
     ),
@@ -34,13 +36,19 @@ use crate::policies::UserPolicy;
 pub async fn index(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
-    Query(params): Query<PaginationParams>,
+    Query(filters): Query<UserQueryParams>,
+    Query(pagination): Query<PaginationParams>,
 ) -> Result<Json<Value>, AppError> {
     if !UserPolicy::index(&claims) {
-        return Err(AppError::Authorization("unauthorized".to_string()));
+        return Err(AppError::Authorization("Forbidden".to_string()));
     }
 
-    let paginated_res = state.user_service.get_users_paginated(params).await?;
+    pagination.validate()?;
+
+    let paginated_res = state
+        .user_service
+        .get_users_paginated(pagination, filters)
+        .await?;
 
     Ok(Json(serde_json::to_value(paginated_res).map_err(|e| {
         AppError::Unexpected(anyhow::anyhow!(
@@ -73,7 +81,7 @@ pub async fn show(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     if !UserPolicy::show(&claims, id) {
-        return Err(AppError::Authorization("unauthorized".to_string()));
+        return Err(AppError::Authorization("Forbidden".to_string()));
     }
 
     let user_dto = state.user_service.get_user(id).await?;
@@ -171,9 +179,7 @@ pub async fn create(
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserCreateRequestDto>>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     if claims.role != 0 {
-        return Err(AppError::Authorization(
-            "Only admins can create users directly".to_string(),
-        ));
+        return Err(AppError::Authorization("Forbidden".to_string()));
     }
 
     let payload = payload_wrapper.into_inner();
@@ -215,7 +221,7 @@ pub async fn update(
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserUpdateRequestDto>>,
 ) -> Result<Json<Value>, AppError> {
     if !UserPolicy::update(&claims, id) {
-        return Err(AppError::Authorization("unauthorized".to_string()));
+        return Err(AppError::Authorization("Forbidden".to_string()));
     }
 
     let mut payload = payload_wrapper.into_inner();
@@ -244,7 +250,7 @@ pub async fn update(
         ("id" = Uuid, Path, description = "User ID to delete")
     ),
     responses(
-        (status = 200, description = "User deleted successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 204, description = "User deleted successfully"),
         (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
         (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto),
         (status = 404, description = "User not found", body = crate::serializers::user_serializer::ErrorResponseDto)
@@ -257,16 +263,48 @@ pub async fn destroy(
     State(state): State<AppState>,
     AuthenticatedUser(claims): AuthenticatedUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<StatusCode, AppError> {
     if !UserPolicy::destroy(&claims) {
-        return Err(AppError::Authorization("unauthorized".to_string()));
+        return Err(AppError::Authorization("Forbidden".to_string()));
     }
 
     state.user_service.soft_delete_user(id).await?;
 
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/{id}/restore",
+    tag = "Users",
+    params(
+        ("id" = Uuid, Path, description = "User ID to restore")
+    ),
+    responses(
+        (status = 200, description = "User restored successfully", body = crate::serializers::user_serializer::UserResponseDto),
+        (status = 401, description = "Unauthorized", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 403, description = "Forbidden (Admin only)", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 404, description = "User not found", body = crate::serializers::user_serializer::ErrorResponseDto),
+        (status = 422, description = "Validation failed / Invalid input", body = crate::serializers::user_serializer::ErrorResponseDto)
+    ),
+    security(
+        ("bearerAuth" = [])
+    )
+)]
+pub async fn restore(
+    State(state): State<AppState>,
+    AuthenticatedUser(claims): AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    if claims.role != 0 {
+        return Err(AppError::Authorization("Forbidden".to_string()));
+    }
+
+    let user_dto = state.user_service.restore_user(id).await?;
+
     Ok(Json(json!({
         "status": StatusCode::OK.as_u16(),
-        "message": "Successfully data deleted",
-        "data": serde_json::Value::Null
+        "message": "Successfully data restored",
+        "data": user_dto
     })))
 }

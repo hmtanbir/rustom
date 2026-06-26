@@ -12,6 +12,8 @@ pub mod models;
 pub mod policies;
 
 pub mod extractors;
+pub mod queries;
 pub mod serializers;
 pub mod services;
 pub mod utils;
+pub mod validations;
