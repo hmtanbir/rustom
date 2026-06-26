@@ -38,7 +38,7 @@ COPY . .
 ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --bin blog
+    cargo build --release --bin rustom
 
 # ---------------------------------------------------
 # Stage 4: Runtime (hardened image, no package manager)
@@ -58,7 +58,7 @@ COPY --from=chef /etc/group /etc/group
 COPY --from=chef /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy build artifact and set ownership
-COPY --from=builder --chown=appuser:appgroup /app/target/release/blog /app/blog
+COPY --from=builder --chown=appuser:appgroup /app/target/release/rustom /app/rustom
 
 # Tell Docker to run the container as the non-root user
 USER appuser
@@ -70,5 +70,5 @@ ENV TZ=Etc/UTC
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
-CMD ["/app/blog"]
+CMD ["/app/rustom"]
 
