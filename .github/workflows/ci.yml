@@ -69,8 +69,10 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features rustls,postgres
+      - name: Install sqlx-cli via cargo-binstall
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install.sh | sh
+          cargo binstall -y sqlx-cli --no-default-features --features rustls,postgres
 
       - name: Prepare test database
         env:
@@ -128,4 +130,6 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
             ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
             ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
