@@ -11,7 +11,8 @@ ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_LOW_SPEED_LIMIT=5
 # Install cargo-chef by downloading the precompiled binary
 ARG TARGETPLATFORM
-RUN case "${TARGETPLATFORM}" in \
+RUN mkdir -p /usr/local/bin && \
+    case "${TARGETPLATFORM}" in \
       "linux/amd64") ARCH="x86_64-unknown-linux-musl" ;; \
       "linux/arm64") ARCH="aarch64-unknown-linux-musl" ;; \
       *) ARCH="x86_64-unknown-linux-musl" ;; \
