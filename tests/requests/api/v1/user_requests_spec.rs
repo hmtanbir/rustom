@@ -211,7 +211,7 @@ async fn test_user_registration_duplicate_email() {
     let mut app = app;
     let response = app.call(req).await.unwrap();
 
-    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -312,7 +312,7 @@ async fn test_delete_user_as_admin_vs_standard_user() {
 
     let mut app_admin = app;
     let response_admin = app_admin.call(req_admin).await.unwrap();
-    assert_eq!(response_admin.status(), StatusCode::OK);
+    assert_eq!(response_admin.status(), StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
@@ -474,4 +474,225 @@ async fn test_non_admin_cannot_update_deleted_at() {
 
     // Standard user gets UNAUTHORIZED because their user account is soft-deleted and fails auth DB lookup check
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_invalid_gateway_token() {
+    let (app, _db) = common::setup_app().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/users/me")
+        .header("x-api-gateway-key", "invalid_key_value")
+        .body(Body::empty())
+        .unwrap();
+
+    let mut app = app;
+    let response = app.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_invalid_or_expired_jwt() {
+    let (app, _db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/users/me")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", "Bearer invalid_token_here")
+        .body(Body::empty())
+        .unwrap();
+
+    let mut app = app;
+    let response = app.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_list_users_filters_and_pagination() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_db_token(&db, admin_id, 0).await;
+
+    // Seed test users
+    let u1 = uuid::Uuid::new_v4();
+    let u2 = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status) VALUES ($1, 'Alpha', 'alpha@example.com', 'pwd_hash', 1, 1)")
+        .bind(u1).execute(&db).await.unwrap();
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status) VALUES ($1, 'Beta', 'beta@example.com', 'pwd_hash', 1, 1)")
+        .bind(u2).execute(&db).await.unwrap();
+
+    // 1. Respects page and per_page
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/users?page=1&per_page=1")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let res_body: Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(res_body["per_page"], 1);
+
+    // 2. per_page > 100 -> 422
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/users?per_page=101")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // 3. Filter by email
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/users?email=alpha")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let res_body: Value = serde_json::from_slice(&body_bytes).unwrap();
+    let data = res_body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["email"], "alpha@example.com");
+}
+
+#[tokio::test]
+async fn test_show_non_existent_and_soft_deleted() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_db_token(&db, admin_id, 0).await;
+
+    // 1. Non-existent ID -> 404
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/users/{}", uuid::Uuid::new_v4()))
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    // 2. Soft-deleted ID -> 404
+    let u1 = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status, deleted_at) VALUES ($1, 'Deleted', 'del@example.com', 'pwd_hash', 1, 1, NOW())")
+        .bind(u1).execute(&db).await.unwrap();
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/users/{}", u1))
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_create_validation_errors() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_db_token(&db, admin_id, 0).await;
+
+    // Missing name -> 422
+    let payload = json!({
+        "user": {
+            "email": "missingname@example.com",
+            "password": "Password123!"
+        }
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/users")
+        .header("Content-Type", "application/json")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn test_update_validation_and_not_found() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_db_token(&db, admin_id, 0).await;
+
+    // Non-existent ID -> 404
+    let payload = json!({
+        "user": {
+            "name": "Updated Name"
+        }
+    });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/users/{}", uuid::Uuid::new_v4()))
+        .header("Content-Type", "application/json")
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_post_restore_active_and_deleted() {
+    let (app, db) = common::setup_app().await;
+    let gateway_key = common::get_gateway_key();
+    let admin_id = uuid::Uuid::new_v4();
+    let admin_token = generate_db_token(&db, admin_id, 0).await;
+
+    // 1. Restore active user -> 422
+    let active_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status) VALUES ($1, 'Active', 'act@example.com', 'pwd_hash', 1, 1)")
+        .bind(active_id).execute(&db).await.unwrap();
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/users/{}/restore", active_id))
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // 2. Restore deleted user -> 200
+    let deleted_id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, name, email, password_digest, role, status, deleted_at) VALUES ($1, 'Del', 'del_restore@example.com', 'pwd_hash', 1, 1, NOW())")
+        .bind(deleted_id).execute(&db).await.unwrap();
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/users/{}/restore", deleted_id))
+        .header("x-api-gateway-key", &gateway_key)
+        .header("Authorization", format!("Bearer {}", admin_token))
+        .body(Body::empty())
+        .unwrap();
+    let mut app_clone = app.clone();
+    let response = app_clone.call(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 }

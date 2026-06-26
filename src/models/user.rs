@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Wrapper to support Rails `wrap_parameters` behavior.
@@ -263,41 +263,4 @@ pub struct Claims {
     pub role: i32,
     pub status: i32,
     pub exp: u64,
-}
-
-/// Pagination parameters.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, IntoParams)]
-pub struct PaginationParams {
-    pub page: Option<u32>,
-    pub per_page: Option<u32>,
-    pub role: Option<String>, // 'admin' or 'user'
-    pub deleted: Option<bool>,
-}
-
-impl PaginationParams {
-    pub fn get_page(&self) -> u32 {
-        self.page.unwrap_or(1).max(1)
-    }
-
-    pub fn get_per_page(&self) -> u32 {
-        self.per_page.unwrap_or(10).clamp(1, 100)
-    }
-
-    pub fn offset(&self) -> u32 {
-        (self.get_page() - 1) * self.get_per_page()
-    }
-}
-
-/// Paginated response metadata.
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-pub struct PaginatedResponse<T> {
-    pub status: u16,
-    pub message: String,
-    pub data: Vec<T>,
-    pub current_page: u32,
-    pub per_page: u32,
-    pub total_pages: u32,
-    pub total_count: u32,
-    pub next_page: Option<u32>,
-    pub prev_page: Option<u32>,
 }

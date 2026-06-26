@@ -18,6 +18,7 @@ use crate::models;
         crate::controllers::api::v1::users_controller::create,
         crate::controllers::api::v1::users_controller::update,
         crate::controllers::api::v1::users_controller::destroy,
+        crate::controllers::api::v1::users_controller::restore,
     ),
     components(
         schemas(
@@ -30,8 +31,9 @@ use crate::models;
             models::UserLoginResponseDto,
             models::UserCreateRequestDto,
             models::UserUpdateRequestDto,
-            models::PaginationParams,
-            models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
+            crate::utils::pagination::PaginationParams,
+            crate::utils::pagination::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
+            crate::queries::UserQueryParams,
         )
     ),
     modifiers(&SecurityAddon),
