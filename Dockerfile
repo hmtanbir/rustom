@@ -4,7 +4,7 @@
 FROM dhi.io/rust:1-alpine-dev AS chef
 
 # SPEED UP 1: Added `lld` and `clang` to leverage a much faster linker
-RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static ca-certificates lld clang
+RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static ca-certificates lld clang curl
 
 # Create a non-root user/group in the build environment
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -16,16 +16,16 @@ ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV CARGO_HTTP_TIMEOUT=120
 ENV CARGO_NET_RETRY=5
 ENV CARGO_HTTP_LOW_SPEED_LIMIT=5
+ENV CARGO_HTTP_MULTIPLEXING=false
 
 # SPEED UP 3: Configure cargo to use the faster `lld` linker for musl targets
 RUN mkdir -p /app/.cargo && \
     echo '[target.x86_64-unknown-linux-musl]' > /app/.cargo/config.toml && \
     echo 'rustflags = ["-C", "link-arg=-fuse-ld=lld"]' >> /app/.cargo/config.toml
 
-# Install cargo-chef utilizing cache mounts to avoid re-compiling from scratch
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo install cargo-chef --locked
+# Install cargo-binstall to pull pre-compiled cargo-chef binary (saves 4+ minutes of compiling cargo-chef)
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | sh && \
+    cargo binstall -y cargo-chef
 
 WORKDIR /app
 
@@ -42,9 +42,10 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 
-# Build dependencies - utilizing cache mounts for registry and git
+# Build dependencies - utilizing cache mounts for registry, git, and target directory
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
     cargo chef cook --release --recipe-path recipe.json
 
 # Copy actual code and build
@@ -52,7 +53,9 @@ COPY . .
 ENV SQLX_OFFLINE=true
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --bin rustom
+    --mount=type=cache,target=/app/target \
+    cargo build --release --bin rustom && \
+    cp /app/target/release/rustom /app/rustom-bin
 
 # ---------------------------------------------------
 # Stage 4: Runtime (hardened image, no package manager)
@@ -72,7 +75,7 @@ COPY --from=chef /etc/group /etc/group
 COPY --from=chef /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy build artifact and set ownership
-COPY --from=builder --chown=appuser:appgroup /app/target/release/rustom /app/rustom
+COPY --from=builder --chown=appuser:appgroup /app/rustom-bin /app/rustom
 
 # Tell Docker to run the container as the non-root user
 USER appuser
