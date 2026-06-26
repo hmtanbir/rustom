@@ -9,6 +9,7 @@ use crate::models;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::config::routes::health_check,
         crate::controllers::api::v1::registration_controller::registration,
         crate::controllers::api::v1::sessions_controller::create,
         crate::controllers::api::v1::users_controller::index,
@@ -22,6 +23,7 @@ use crate::models;
     ),
     components(
         schemas(
+            crate::config::routes::HealthResponse,
             crate::serializers::user_serializer::UserSerializer,
             crate::serializers::user_serializer::UserResponseDto,
             crate::serializers::user_serializer::SessionResponseDto,
@@ -38,6 +40,7 @@ use crate::models;
     ),
     modifiers(&SecurityAddon),
     tags(
+        (name = "Health", description = "Health Check"),
         (name = "Auth", description = "Authentication and Registration"),
         (name = "Users", description = "User Management")
     )
