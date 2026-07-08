@@ -18,13 +18,13 @@ pub async fn validate_user_create(
         if !is_valid_email(&email_str) {
             v.add_error("email", "is invalid");
         } else {
-            let exists = sqlx::query_scalar!(
+            let exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND deleted_at IS NULL)",
-                email_str
             )
+            .bind(email_str)
             .fetch_one(db)
             .await?;
-            if exists.unwrap_or(false) {
+            if exists {
                 v.add_error("email", "has already been taken");
             }
         }
@@ -57,14 +57,14 @@ pub async fn validate_user_update(
             if !is_valid_email(email_str) {
                 v.add_error("email", "is invalid");
             } else {
-                let exists = sqlx::query_scalar!(
+                let exists: bool = sqlx::query_scalar(
                     "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND deleted_at IS NULL AND id != $2)",
-                    email_str,
-                    id
                 )
+                .bind(email_str)
+                .bind(id)
                 .fetch_one(db)
                 .await?;
-                if exists.unwrap_or(false) {
+                if exists {
                     v.add_error("email", "has already been taken");
                 }
             }
