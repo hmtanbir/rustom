@@ -9,6 +9,7 @@ use crate::models;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::config::routes::health_check,
         crate::controllers::api::v1::registration_controller::registration,
         crate::controllers::api::v1::sessions_controller::create,
         crate::controllers::api::v1::users_controller::index,
@@ -18,9 +19,11 @@ use crate::models;
         crate::controllers::api::v1::users_controller::create,
         crate::controllers::api::v1::users_controller::update,
         crate::controllers::api::v1::users_controller::destroy,
+        crate::controllers::api::v1::users_controller::restore,
     ),
     components(
         schemas(
+            crate::config::routes::HealthResponse,
             crate::serializers::user_serializer::UserSerializer,
             crate::serializers::user_serializer::UserResponseDto,
             crate::serializers::user_serializer::SessionResponseDto,
@@ -30,12 +33,14 @@ use crate::models;
             models::UserLoginResponseDto,
             models::UserCreateRequestDto,
             models::UserUpdateRequestDto,
-            models::PaginationParams,
-            models::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
+            crate::utils::pagination::PaginationParams,
+            crate::utils::pagination::PaginatedResponse<crate::serializers::user_serializer::UserSerializer>,
+            crate::queries::UserQueryParams,
         )
     ),
     modifiers(&SecurityAddon),
     tags(
+        (name = "Health", description = "Health Check"),
         (name = "Auth", description = "Authentication and Registration"),
         (name = "Users", description = "User Management")
     )
