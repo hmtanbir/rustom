@@ -7,7 +7,7 @@ FROM dhi.io/rust:1-alpine-dev AS chef
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev openssl-libs-static ca-certificates lld clang curl
 
 # Create a non-root user/group in the build environment
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup -s /sbin/nologin
 
 # SPEED UP 2: Force Cargo to use the sparse registry protocol (faster dependency fetching over the network)
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -81,6 +81,10 @@ COPY --from=chef /usr/lib/libgcc_s.so.1 /usr/lib/libgcc_s.so.1
 
 # Copy build artifact and set ownership
 COPY --from=builder --chown=appuser:appgroup /app/rustom-bin /app/rustom
+
+# Remove shells from runtime stage to prevent execution
+USER root
+RUN ["rm", "-f", "/bin/sh", "/bin/ash"]
 
 # Tell Docker to run the container as the non-root user
 USER appuser
