@@ -93,7 +93,7 @@ EXPOSE 3000
 ENV TZ=Etc/UTC
 
 # Optional: Add a healthcheck (assuming you have a /health route)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=3600s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
 CMD ["/app/rustom"]

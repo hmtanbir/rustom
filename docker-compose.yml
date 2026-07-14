@@ -2,7 +2,7 @@ name: 'rustom'
 
 services:
   postgres:
-    image: dhi.io/postgres:18-alpine
+    image: dhi.io/postgres:16-alpine
     container_name: rustom_postgres
     restart: unless-stopped
     command:
@@ -41,27 +41,25 @@ services:
 
 
   redis:
-    image: dhi.io/redis:8-alpine3.23
-    container_name: rustom_redis
+    image: hmtanbir/dragonfly:latest
+    container_name: rustom-redis
     restart: unless-stopped
-    command: ["sh", "-c", "redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru $${REDIS_PASSWORD:+--requirepass \"$$REDIS_PASSWORD\"}"]
-    ports:
-      - "6379:6379"
-    env_file:
-      - .env
+    command: ["--logtostderr", "--dir=/data"]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "if [ -z \"$$REDIS_PASSWORD\" ]; then redis-cli ping; else redis-cli -a \"$$REDIS_PASSWORD\" ping; fi"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 6379 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
     deploy:
       resources:
         limits:
-          memory: 256M
+          cpus: "2.00"
+          memory: 2G
         reservations:
-          memory: 128M
+          cpus: "1.00"
+          memory: 1G
     logging:
       driver: "json-file"
       options:

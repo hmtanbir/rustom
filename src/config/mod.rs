@@ -48,7 +48,7 @@ impl AppConfig {
             std::env::var("POSTGRES_HOST"),
             std::env::var("POSTGRES_PORT"),
         ) {
-            builder = builder.set_default(
+            builder = builder.set_override(
                 "database_url",
                 format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db),
             )?;
@@ -61,7 +61,7 @@ impl AppConfig {
             std::env::var("REDIS_PORT"),
             std::env::var("REDIS_DB"),
         ) {
-            builder = builder.set_default(
+            builder = builder.set_override(
                 "redis_url",
                 format!("redis://:{}@{}:{}/{}", pass, host, port, db),
             )?;
@@ -75,7 +75,7 @@ impl AppConfig {
             std::env::var("RABBITMQ_PORT"),
             std::env::var("RABBITMQ_VHOST"),
         ) {
-            builder = builder.set_default(
+            builder = builder.set_override(
                 "rabbitmq_url",
                 format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost),
             )?;
