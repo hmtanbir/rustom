@@ -82,8 +82,8 @@ impl UserService {
         .bind(&dto.name)
         .bind(&dto.email)
         .bind(&password_digest)
-        .bind(dto.role.unwrap_or(1))
-        .bind(dto.status.unwrap_or(1))
+        .bind(1i32) // role: standard user (cannot be overridden via public registration)
+        .bind(1i32) // status: active (cannot be overridden via public registration)
         .fetch_one(&mut *tx)
         .await?;
 

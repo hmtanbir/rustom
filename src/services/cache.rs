@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use redis::AsyncCommands;
+use redis::cmd;
 
 use crate::errors::AppError;
 use crate::infrastructure::RedisPool;
@@ -17,7 +18,9 @@ pub trait CacheService: Send + Sync {
     /// Remove a value from cache by key.
     async fn delete(&self, key: &str) -> Result<(), AppError>;
 
-    /// Increment an integer value in the cache, setting a TTL if key does not exist. Returns the new value.
+    /// Atomically increment an integer value in the cache and set a TTL on first increment.
+    /// Returns the new value after increment. Uses a Lua script to prevent race conditions
+    /// between INCR and EXPIRE.
     async fn incr_with_ttl(&self, key: &str, ttl_seconds: u64) -> Result<i64, AppError>;
 }
 
@@ -92,17 +95,24 @@ impl CacheService for RedisCacheService {
             ))
         })?;
 
-        let val: i64 = conn
-            .incr(key, 1)
-            .await
-            .map_err(|e| AppError::Cache(format!("Redis INCR command failed: {}", e)))?;
+        // Lua script: atomically increment and set TTL on first increment.
+        // This prevents the race condition where INCR succeeds but EXPIRE never fires.
+        let script = r#"
+        local val = redis.call('INCR', KEYS[1])
+        if val == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return val
+        "#;
 
-        if val == 1 {
-            let _: () = conn
-                .expire(key, ttl_seconds as i64)
-                .await
-                .map_err(|e| AppError::Cache(format!("Redis EXPIRE command failed: {}", e)))?;
-        }
+        let val: i64 = cmd("EVAL")
+            .arg(script)
+            .arg(1) // number of keys
+            .arg(key)
+            .arg(ttl_seconds as i64)
+            .query_async(&mut *conn)
+            .await
+            .map_err(|e| AppError::Cache(format!("Redis EVAL command failed: {}", e)))?;
 
         Ok(val)
     }
