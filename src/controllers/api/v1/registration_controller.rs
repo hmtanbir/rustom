@@ -22,7 +22,7 @@ pub async fn registration(
     State(state): State<AppState>,
     AppJson(payload_wrapper): AppJson<UserPayloadWrapper<UserRegisterRequestDto>>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let mut payload = payload_wrapper.into_inner();
+    let payload = payload_wrapper.into_inner();
 
     if payload.email.trim().is_empty()
         || payload.password.trim().is_empty()
@@ -47,10 +47,8 @@ pub async fn registration(
         ));
     }
 
-    // Force role=1 (standard user) and status=1 (active) for public registration
-    payload.role = Some(1);
-    payload.status = Some(1);
-
+    // Role and status are enforced server-side in the service layer (role=1, status=1)
+    // to prevent privilege escalation via public registration.
     let user_dto = state.user_service.register(payload).await?;
 
     // Send Slack notification for user registration asynchronously
