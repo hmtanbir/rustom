@@ -196,9 +196,10 @@ impl User {
     }
 }
 
-/// Request schema for user registration. (Permitted params)
+/// Request schema for public user registration. Does NOT accept role/status
+/// to prevent privilege escalation. Role and status are enforced server-side.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)] // Enforce strong parameters
+#[serde(deny_unknown_fields)]
 pub struct UserRegisterRequestDto {
     #[schema(example = "John Doe")]
     pub name: String,
@@ -206,10 +207,6 @@ pub struct UserRegisterRequestDto {
     pub email: String,
     #[schema(example = "SecretPassword123")]
     pub password: String,
-    #[serde(default, deserialize_with = "deserialize_role")]
-    pub role: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_status")]
-    pub status: Option<i32>,
 }
 
 /// Request schema for user login authentication.

@@ -33,23 +33,42 @@ pub async fn health_check() -> impl IntoResponse {
 /// Build the Axum Router configuring routes, CORS, logging, and Swagger UI.
 pub fn create_router(state: AppState) -> Router {
     let app_env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
-    let cors = if app_env == "production" {
-        let mut allowed_origins = Vec::new();
-        for domain in state.config.domain_name.split(',') {
-            let trimmed = domain.trim();
-            if !trimmed.is_empty()
-                && let Ok(origin) = trimmed.parse::<axum::http::HeaderValue>()
-            {
-                allowed_origins.push(origin);
-            }
+    let mut allowed_origins = Vec::new();
+    for domain in state.config.domain_name.split(',') {
+        let trimmed = domain.trim();
+        if !trimmed.is_empty()
+            && let Ok(origin) = trimmed.parse::<axum::http::HeaderValue>()
+        {
+            allowed_origins.push(origin);
         }
-        CorsLayer::new()
-            .allow_origin(allowed_origins)
-            .allow_methods(tower_http::cors::Any)
-            .allow_headers(tower_http::cors::Any)
-    } else {
-        CorsLayer::permissive()
-    };
+    }
+
+    let mut cors = CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+            axum::http::header::HeaderName::from_static("x-api-gateway-key"),
+        ]);
+
+    // In development, also allow localhost origins for convenience
+    if app_env != "production" {
+        if let Ok(dev_origin) = "http://localhost:3000".parse::<axum::http::HeaderValue>() {
+            cors = cors.allow_origin([dev_origin]);
+        }
+        if let Ok(dev_origin) = "http://127.0.0.1:3000".parse::<axum::http::HeaderValue>() {
+            cors = cors.allow_origin([dev_origin]);
+        }
+    }
 
     let api_routes = Router::new()
         // Mount all API routes under /api
