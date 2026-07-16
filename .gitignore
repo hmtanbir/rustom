@@ -5,3 +5,4 @@
 !.env.example
 REVIEW.md
 tmp/*
+.mimocode
