@@ -48,9 +48,17 @@ impl AppConfig {
             std::env::var("POSTGRES_HOST"),
             std::env::var("POSTGRES_PORT"),
         ) {
+            let ssl_mode = match std::env::var("POSTGRES_SSL_ENABLED").as_deref() {
+                Ok("on") => "require",
+                Ok("off") => "disable",
+                _ => "prefer",
+            };
             builder = builder.set_override(
                 "database_url",
-                format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db),
+                format!(
+                    "postgres://{}:{}@{}:{}/{}?sslmode={}",
+                    user, pass, host, port, db, ssl_mode
+                ),
             )?;
         }
 

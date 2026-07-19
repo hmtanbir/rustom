@@ -2,10 +2,11 @@ name: 'rustom'
 
 services:
   postgres:
-    image: dhi.io/postgres:16-alpine
-    container_name: rustom_postgres
-    restart: unless-stopped
+    image: hmtanbir/postgres:latest
+    container_name: rustom-postgres
     command:
+      - "-c"
+      - "listen_addresses=*"
       - "-c"
       - "shared_buffers=64MB"
       - "-c"
@@ -17,67 +18,71 @@ services:
       - "-c"
       - "max_connections=20"
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432" 
     env_file:
       - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: 512M
-        reservations:
-          memory: 256M
+          memory: 1G
+          cpus: 2.0
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
-
   redis:
     image: hmtanbir/dragonfly:latest
     container_name: rustom-redis
-    restart: unless-stopped
     command: ["--logtostderr", "--dir=/data"]
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 6379 || exit 1"]
-      interval: 5s
+      test: ["CMD", "nc", "-z", "127.0.0.1", "6379"]
+      interval: 10s
       timeout: 5s
       retries: 5
     deploy:
       resources:
         limits:
-          cpus: "2.00"
+          cpus: 2.0
           memory: 2G
         reservations:
-          cpus: "1.00"
+          cpus: 1.0
           memory: 1G
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
   rabbitmq:
-    image: dhi.io/rabbitmq:4.2
-    container_name: rustom_rabbitmq
+    image: hmtanbir/rabbitmq:latest
+    container_name: rustom-rabbitmq
     restart: unless-stopped
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     env_file:
       - .env
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_ERLANG_COOKIE=${RABBITMQ_ERLANG_COOKIE:-secureCookie456}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -85,20 +90,29 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/rabbitmq
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true  
     deploy:
       resources:
         limits:
+          cpus: 2.0
           memory: 1G
         reservations:
+          cpus: 1.0
           memory: 512M
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
   api:
-    image: hmtanbir/rustom:1.0.0
+    image: hmtanbir/rustom:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -116,6 +130,7 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
+      - POSTGRES_SSL_ENABLED=off
       - REDIS_HOST=redis
       - RABBITMQ_HOST=rabbitmq
     depends_on:
@@ -125,27 +140,31 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
+          cpus: 1.0
           memory: 256M
         reservations:
+          cpus: 0.5
           memory: 128M
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
 volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
-
 networks:
   default:
-   name: rustom
-   driver: bridge
-
-
-
+    name: rustom
+    driver: bridge
