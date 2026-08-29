@@ -16,9 +16,7 @@ services:
       - "-c"
       - "effective_cache_size=128MB"
       - "-c"
-      - "max_connections=20"
-    ports:
-      - "127.0.0.1:5432:5432" 
+      - "max_connections=20" 
     env_file:
       - .env
     volumes:
@@ -41,8 +39,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
           cpus: 2.0
+          memory: 1G
+        reservations:
+          cpus: 0.5
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -64,10 +65,10 @@ services:
       resources:
         limits:
           cpus: 2.0
-          memory: 2G
-        reservations:
-          cpus: 1.0
           memory: 1G
+        reservations:
+          cpus: 0.5
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -83,7 +84,7 @@ services:
     ports:
       - "${PORT}:3000"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "/bin/busybox", "wget", "--spider", "-q", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -91,8 +92,10 @@ services:
     env_file:
       - .env
     environment:
+      - PORT=3000
+      - HOST=0.0.0.0
       - POSTGRES_HOST=postgres
-      - POSTGRES_SSL_ENABLED=off
+      - POSTGRES_SSL_ENABLED=true
       - REDIS_HOST=redis
     depends_on:
       postgres:
@@ -113,7 +116,7 @@ services:
           memory: 256M
         reservations:
           cpus: 0.5
-          memory: 128M
+          memory: 256M
     logging:
       driver: "json-file"
       options:
