@@ -31,24 +31,19 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Failed to initialize PostgreSQL database")?;
 
-    // 4. Initialize Redis cache pool
-    let redis = infrastructure::init_redis(&config)
-        .context("Failed to initialize Redis cache connection")?;
+    // 4. Initialize Redis pool (used for caching and background queue)
+    let redis =
+        infrastructure::init_redis(&config).context("Failed to initialize Redis connection")?;
 
-    // 5. Initialize RabbitMQ connection and channel
-    let (_rabbitmq_conn, rabbitmq_channel) = infrastructure::init_rabbitmq(&config)
-        .await
-        .context("Failed to initialize RabbitMQ connection")?;
+    // 5. Start the Redis background queue worker consumer
+    services::start_queue_consumer(redis.clone());
 
-    // 6. Start the RabbitMQ background worker consumer
-    services::start_queue_consumer(rabbitmq_channel.clone());
-
-    // 7. Instantiate services
+    // 6. Instantiate services
     let cache_service =
-        Arc::new(services::RedisCacheService::new(redis)) as services::DynCacheService;
+        Arc::new(services::RedisCacheService::new(redis.clone())) as services::DynCacheService;
     let user_service = services::UserService::new(db, cache_service, config.clone());
-    let queue_publisher = Arc::new(services::RabbitMQQueueService::new(rabbitmq_channel))
-        as services::DynQueueService;
+    let queue_publisher =
+        Arc::new(services::RedisQueueService::new(redis)) as services::DynQueueService;
 
     // 8. Bootstrap state and routes
     let state = app_state::AppState {

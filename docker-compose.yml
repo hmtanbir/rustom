@@ -73,44 +73,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-  rabbitmq:
-    image: hmtanbir/rabbitmq:latest
-    container_name: rustom-rabbitmq
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
-      - RABBITMQ_ERLANG_COOKIE=${RABBITMQ_ERLANG_COOKIE:-secureCookie456}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/run/rabbitmq
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true  
-    deploy:
-      resources:
-        limits:
-          cpus: 2.0
-          memory: 1G
-        reservations:
-          cpus: 1.0
-          memory: 512M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
   api:
     image: hmtanbir/rustom:latest
     build:
@@ -132,13 +94,10 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_SSL_ENABLED=off
       - REDIS_HOST=redis
-      - RABBITMQ_HOST=rabbitmq
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     read_only: true
     tmpfs:
@@ -163,7 +122,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  rabbitmq_data:
 networks:
   default:
     name: rustom

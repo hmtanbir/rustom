@@ -17,7 +17,7 @@ pub enum AppError {
     Cache(String),
 
     #[error("Message queue error: {0}")]
-    Queue(#[from] lapin::Error),
+    Queue(String),
 
     #[error("API Gateway authentication failed: {0}")]
     GatewayAuth(String),
