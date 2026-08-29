@@ -6,7 +6,7 @@ use crate::services::{DynQueueService, UserService};
 pub struct AppState {
     /// Service logic for user management & password validation.
     pub user_service: UserService,
-    /// Publisher service for pushing jobs to RabbitMQ.
+    /// Publisher service for pushing jobs to the Redis queue.
     pub queue_publisher: DynQueueService,
     /// Environment variables configuration.
     pub config: AppConfig,

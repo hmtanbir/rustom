@@ -14,8 +14,6 @@ pub struct AppConfig {
     pub database_url: String,
     /// Connection string for Redis caching server.
     pub redis_url: String,
-    /// Connection string for RabbitMQ messaging broker.
-    pub rabbitmq_url: String,
     /// Secret key used to sign and verify JWT authentication tokens.
     pub jwt_secret: String,
     /// Duration in seconds for JWT tokens to remain valid.
@@ -72,20 +70,6 @@ impl AppConfig {
             builder = builder.set_override(
                 "redis_url",
                 format!("redis://:{}@{}:{}/{}", pass, host, port, db),
-            )?;
-        }
-
-        // Construct RabbitMQ URL from individual RABBITMQ_* env vars if available
-        if let (Ok(user), Ok(pass), Ok(host), Ok(port), Ok(vhost)) = (
-            std::env::var("RABBITMQ_USER"),
-            std::env::var("RABBITMQ_PASSWORD"),
-            std::env::var("RABBITMQ_HOST"),
-            std::env::var("RABBITMQ_PORT"),
-            std::env::var("RABBITMQ_VHOST"),
-        ) {
-            builder = builder.set_override(
-                "rabbitmq_url",
-                format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost),
             )?;
         }
 

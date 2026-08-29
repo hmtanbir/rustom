@@ -16,9 +16,7 @@ services:
       - "-c"
       - "effective_cache_size=128MB"
       - "-c"
-      - "max_connections=20"
-    ports:
-      - "127.0.0.1:5432:5432" 
+      - "max_connections=20" 
     env_file:
       - .env
     volumes:
@@ -41,8 +39,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
           cpus: 2.0
+          memory: 1G
+        reservations:
+          cpus: 0.5
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -64,47 +65,9 @@ services:
       resources:
         limits:
           cpus: 2.0
-          memory: 2G
-        reservations:
-          cpus: 1.0
-          memory: 1G
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-  rabbitmq:
-    image: hmtanbir/rabbitmq:latest
-    container_name: rustom-rabbitmq
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
-      - RABBITMQ_ERLANG_COOKIE=${RABBITMQ_ERLANG_COOKIE:-secureCookie456}
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/run/rabbitmq
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true  
-    deploy:
-      resources:
-        limits:
-          cpus: 2.0
           memory: 1G
         reservations:
-          cpus: 1.0
+          cpus: 0.5
           memory: 512M
     logging:
       driver: "json-file"
@@ -121,7 +84,7 @@ services:
     ports:
       - "${PORT}:3000"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "/bin/busybox", "wget", "--spider", "-q", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -129,16 +92,15 @@ services:
     env_file:
       - .env
     environment:
+      - PORT=3000
+      - HOST=0.0.0.0
       - POSTGRES_HOST=postgres
-      - POSTGRES_SSL_ENABLED=off
+      - POSTGRES_SSL_ENABLED=true
       - REDIS_HOST=redis
-      - RABBITMQ_HOST=rabbitmq
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     read_only: true
     tmpfs:
@@ -154,7 +116,7 @@ services:
           memory: 256M
         reservations:
           cpus: 0.5
-          memory: 128M
+          memory: 256M
     logging:
       driver: "json-file"
       options:
@@ -163,7 +125,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  rabbitmq_data:
 networks:
   default:
     name: rustom

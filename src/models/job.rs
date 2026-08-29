@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-/// Representation of an asynchronous job payload to be placed in RabbitMQ.
+/// Representation of an asynchronous job payload to be placed in the background queue.
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct JobPayload {
     pub job_id: Uuid,

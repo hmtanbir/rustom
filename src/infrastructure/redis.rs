@@ -2,6 +2,9 @@ use crate::config::AppConfig;
 use crate::errors::AppError;
 use deadpool_redis::{Config, Pool, Runtime};
 
+/// Redis key used for the background jobs FIFO queue.
+pub const JOBS_QUEUE: &str = "jobs_queue";
+
 /// Redis Connection Pool alias.
 pub type RedisPool = Pool;
 
