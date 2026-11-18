@@ -65,15 +65,6 @@ pub async fn setup_app() -> (Router, PgPool) {
         format!("redis://:{}@{}:{}/{}", pass, host, port, db)
     });
 
-    let rabbitmq_url = std::env::var("RABBITMQ_URL").unwrap_or_else(|_| {
-        let user = std::env::var("RABBITMQ_USER").unwrap_or_else(|_| "guest".to_string());
-        let pass = std::env::var("RABBITMQ_PASSWORD").unwrap_or_else(|_| "guest".to_string());
-        let host = std::env::var("RABBITMQ_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-        let port = std::env::var("RABBITMQ_PORT").unwrap_or_else(|_| "5672".to_string());
-        let vhost = std::env::var("RABBITMQ_VHOST").unwrap_or_else(|_| "%2f".to_string());
-        format!("amqp://{}:{}@{}:{}/{}", user, pass, host, port, vhost)
-    });
-
     let config = AppConfig {
         host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
         port: std::env::var("PORT")
@@ -82,7 +73,6 @@ pub async fn setup_app() -> (Router, PgPool) {
             .unwrap_or(3000),
         database_url,
         redis_url,
-        rabbitmq_url,
         jwt_secret: std::env::var("JWT_SECRET")
             .unwrap_or_else(|_| "secret_for_tests_123456789".to_string()),
         jwt_expiration_seconds: std::env::var("JWT_EXPIRATION_SECONDS")

@@ -1,64 +1,53 @@
-use crate::errors::AppError;
-use crate::infrastructure::JOBS_QUEUE;
-use crate::models::JobPayload;
-use futures_util::stream::StreamExt;
-use lapin::{
-    BasicProperties, Channel,
-    options::{BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicRejectOptions},
-    types::FieldTable,
-};
-
 use async_trait::async_trait;
+use deadpool_redis::redis::AsyncCommands;
 use std::sync::Arc;
+use std::time::Duration;
+
+use crate::errors::AppError;
+use crate::infrastructure::{JOBS_QUEUE, RedisPool};
+use crate::models::JobPayload;
 
 /// Generic messaging queue service trait.
 #[async_trait]
 pub trait QueueService: Send + Sync {
-    /// Publish a background task to the message broker.
+    /// Publish a background task to the message queue.
     async fn publish_job(&self, job: &JobPayload) -> Result<(), AppError>;
 }
 
-/// RabbitMQ implementation of the QueueService trait.
+/// Redis-backed implementation of the QueueService trait.
 #[derive(Clone)]
-pub struct RabbitMQQueueService {
-    channel: Channel,
+pub struct RedisQueueService {
+    pool: RedisPool,
 }
 
-impl RabbitMQQueueService {
-    /// Create a new RabbitMQQueueService.
-    pub fn new(channel: Channel) -> Self {
-        Self { channel }
+impl RedisQueueService {
+    /// Create a new RedisQueueService.
+    pub fn new(pool: RedisPool) -> Self {
+        Self { pool }
     }
 }
 
 #[async_trait]
-impl QueueService for RabbitMQQueueService {
+impl QueueService for RedisQueueService {
     async fn publish_job(&self, job: &JobPayload) -> Result<(), AppError> {
-        tracing::debug!("Publishing job to queue: {:?}", job);
+        tracing::debug!("Publishing job to Redis queue: {:?}", job);
 
-        let payload = serde_json::to_vec(job).map_err(|e| {
+        let payload = serde_json::to_string(job).map_err(|e| {
             AppError::Unexpected(anyhow::anyhow!("Failed to serialize job payload: {}", e))
         })?;
 
-        let confirm = self
-            .channel
-            .basic_publish(
-                "", // Default exchange
-                JOBS_QUEUE,
-                BasicPublishOptions::default(),
-                &payload,
-                BasicProperties::default(),
-            )
-            .await
-            .map_err(AppError::Queue)?
-            .await
-            .map_err(AppError::Queue)?;
+        let mut conn = self.pool.get().await.map_err(|e| {
+            AppError::Queue(format!(
+                "Failed to acquire connection from Redis pool: {}",
+                e
+            ))
+        })?;
 
-        if !confirm.is_ack() {
-            return Err(AppError::Queue(lapin::Error::IOError(std::sync::Arc::new(
-                std::io::Error::other("Message was not acknowledged by RabbitMQ broker"),
-            ))));
-        }
+        // Push job to the right of the list (FIFO: LPUSH to enqueue, BRPOP to consume)
+        let _: () = conn
+            .lpush(JOBS_QUEUE, payload)
+            .await
+            .map_err(|e| AppError::Queue(format!("Redis LPUSH command failed: {}", e)))?;
 
         tracing::info!("Job {} published successfully.", job.job_id);
         Ok(())
@@ -68,78 +57,63 @@ impl QueueService for RabbitMQQueueService {
 /// Dynamic trait object for QueueService.
 pub type DynQueueService = Arc<dyn QueueService>;
 
-/// Spawns a non-blocking Tokio background worker task to consume and process RabbitMQ messages.
-pub fn start_queue_consumer(channel: Channel) {
+/// Spawns a non-blocking Tokio background worker task to consume and process Redis queue messages.
+pub fn start_queue_consumer(pool: RedisPool) {
     tokio::spawn(async move {
-        tracing::info!("Starting background queue worker consumer...");
+        tracing::info!("Starting background Redis queue worker consumer...");
 
-        let mut consumer = match channel
-            .basic_consume(
-                JOBS_QUEUE,
-                "rustom_consumer_tag",
-                BasicConsumeOptions::default(),
-                FieldTable::default(),
-            )
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("Failed to register queue consumer: {:?}", e);
-                return;
-            }
-        };
-
-        while let Some(delivery_result) = consumer.next().await {
-            let delivery = match delivery_result {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::error!("Error in consumer delivery stream: {:?}", e);
-                    continue;
-                }
-            };
-
-            let data = &delivery.data;
-            let payload: JobPayload = match serde_json::from_slice(data) {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::error!("Failed to deserialize received job payload: {:?}", e);
-                    // Reject invalid messages without requeuing to prevent poison-pill loops
-                    let _ = delivery.reject(BasicRejectOptions::default()).await;
-                    continue;
-                }
-            };
-
-            tracing::info!(
-                "Worker received Job ID: {} [Type: {}]",
-                payload.job_id,
-                payload.job_type
-            );
-
-            // Execute asynchronous processing based on the job type
-            let process_result = process_job(&payload).await;
-
-            match process_result {
-                Ok(_) => {
-                    tracing::info!(
-                        "Job {} completed successfully. Acknowledging...",
-                        payload.job_id
-                    );
-                    if let Err(e) = delivery.ack(BasicAckOptions::default()).await {
-                        tracing::error!("Failed to acknowledge message: {:?}", e);
-                    }
-                }
+        loop {
+            let mut conn = match pool.get().await {
+                Ok(c) => c,
                 Err(e) => {
                     tracing::error!(
-                        "Failed to process job {}: {:?}. Rejecting...",
-                        payload.job_id,
+                        "Failed to acquire connection from Redis pool for worker: {:?}",
                         e
                     );
-                    // Reject the message without requeuing to prevent poison pill loops.
-                    // In a production system, a Dead Letter Exchange (DLX) should be configured
-                    // on the queue to capture these failed messages.
-                    if let Err(re) = delivery.reject(BasicRejectOptions { requeue: false }).await {
-                        tracing::error!("Failed to reject message: {:?}", re);
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            // BRPOP with a 2-second timeout to allow smooth task interruption and connection refreshment
+            let result: Result<Option<(String, String)>, _> = deadpool_redis::redis::cmd("BRPOP")
+                .arg(JOBS_QUEUE)
+                .arg(2)
+                .query_async(&mut *conn)
+                .await;
+
+            match result {
+                Ok(Some((_queue, data))) => {
+                    let payload: JobPayload = match serde_json::from_str(&data) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::error!("Failed to deserialize received job payload: {:?}", e);
+                            continue;
+                        }
+                    };
+
+                    tracing::info!(
+                        "Worker received Job ID: {} [Type: {}]",
+                        payload.job_id,
+                        payload.job_type
+                    );
+
+                    // Execute asynchronous processing based on the job type
+                    match process_job(&payload).await {
+                        Ok(_) => {
+                            tracing::info!("Job {} completed successfully.", payload.job_id);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to process job {}: {:?}", payload.job_id, e);
+                        }
                     }
+                }
+                Ok(None) => {
+                    // Queue was empty during timeout period, continue waiting
+                }
+                Err(e) => {
+                    tracing::error!("Error popping job from Redis queue: {:?}", e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }

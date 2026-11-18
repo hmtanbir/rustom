@@ -6,6 +6,6 @@ pub mod user;
 
 pub use cache::{CacheService, DynCacheService, RedisCacheService};
 pub use encryption_service::EncryptionService;
-pub use queue::{DynQueueService, QueueService, RabbitMQQueueService, start_queue_consumer};
+pub use queue::{DynQueueService, QueueService, RedisQueueService, start_queue_consumer};
 pub use slack_notification::SlackNotification;
 pub use user::UserService;

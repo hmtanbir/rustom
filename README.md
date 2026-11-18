@@ -10,10 +10,9 @@ Rustom is built with **Axum**, leveraging Rust's fearless concurrency and perfor
 - **Secure Authentication:** JWT-based authentication with secure password hashing using Argon2id.
 - **Role-Based Access Control (RBAC):** Built-in middleware for route protection and role-based permissions (e.g., Admin vs User). Roles are dynamically mapped from the `roles.yml` configuration file.
 - **PostgreSQL Database:** Async database interaction and compile-time SQL query verification using [SQLx](https://github.com/launchbadge/sqlx). Automatic database migrations on startup.
-- **Redis Caching:** High-performance data caching layer using Redis to minimize database load.
-- **RabbitMQ Background Workers:** Asynchronous background job processing and message queuing.
+- **Redis Caching & Background Workers:** High-performance data caching and asynchronous background job queueing using Redis.
 - **Interactive API Documentation:** Auto-generated Swagger UI and OpenAPI specifications via [utoipa](https://github.com/juhaku/utoipa).
-- **Containerized Development:** Complete `docker-compose` setup for the API, PostgreSQL, Redis, and RabbitMQ. Includes a multi-stage, highly optimized Dockerfile for production.
+- **Containerized Development:** Complete `docker-compose` setup for the API, PostgreSQL, and Redis. Includes a multi-stage, highly optimized Dockerfile for production.
 - **Testing Strategy:** Built-in unit tests and mocked services using `mockall`.
 
 ## 📂 Project Structure
@@ -26,7 +25,7 @@ src/
 ├── config/         # Configuration logic (Environment variables via dotenvy)
 ├── docs/           # OpenAPI documentation configurations
 ├── domain/         # Domain Layer: Core models, DTOs, Enums, and AppErrors
-├── infrastructure/ # Infrastructure Layer: Database (Postgres), Cache (Redis), and MQ (RabbitMQ) connections
+├── infrastructure/ # Infrastructure Layer: Database (Postgres) and Cache/Queue (Redis) connections
 └── services/       # Service Layer: Core business logic, integrating with infrastructure
 ```
 
@@ -38,7 +37,7 @@ To run the project, you will need:
 
 ## 🐳 Running with Docker (Recommended)
 
-The easiest way to run the application locally is using Docker Compose. This spins up the API, PostgreSQL, Redis, and RabbitMQ containers simultaneously.
+The easiest way to run the application locally is using Docker Compose. This spins up the API, PostgreSQL, and Redis containers simultaneously.
 
 1. **Copy the example environment file:**
    ```bash
@@ -55,15 +54,15 @@ The API will be available at `http://localhost:3000`.
 
 ## 💻 Running Natively (Without Docker)
 
-If you prefer to run the Rust application natively on your machine, you must have Postgres, Redis, and RabbitMQ running locally or remotely.
+If you prefer to run the Rust application natively on your machine, you must have Postgres and Redis running locally or remotely.
 
 1. **Start the infrastructure services (using Docker):**
    ```bash
-   docker compose up postgres redis rabbitmq -d
+   docker compose up postgres redis -d
    ```
 
 2. **Configure your `.env` and `.env.test` and `.env.production` files:**
-   Make sure the database, Redis, and RabbitMQ connection variables point to your running instances.
+   Make sure the database and Redis connection variables point to your running instances.
 
 3. **Create the Database & Run Migrations:**
    You must create the database before running the application natively. You can use `sqlx-cli` to handle this.

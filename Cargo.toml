@@ -14,8 +14,6 @@ jsonwebtoken = "9"
 argon2 = "0.5"
 redis = { version = "0.25", features = ["tokio-comp"] }
 deadpool-redis = "0.15"
-lapin = "2.3"
-futures-util = "0.3"
 utoipa = { version = "5", features = ["chrono", "uuid"] }
 utoipa-swagger-ui = { version = "8", features = ["axum", "reqwest"] }
 thiserror = "1.0"
